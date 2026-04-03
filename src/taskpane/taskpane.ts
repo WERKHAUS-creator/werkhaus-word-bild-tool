@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 
 type VariableStatus = "not-inserted" | "up-to-date" | "outdated";
+type DateFormatMode = "short" | "long";
 
 type VariableItem = {
   name: string;
@@ -19,22 +20,48 @@ type SavedFileMeta = {
 
 type ParsedControlMeta = {
   variableName: string;
-  mode: "inline" | "block";
-  prefix: string;
-  suffix: string;
+  mode: "single" | "table";
+  fitWidth: boolean;
+  withWordBorders: boolean;
+  keepFormattingOnUpdate: boolean;
+  useExcelFormatting: boolean;
+};
+
+type TableOptions = {
+  fitWidth: boolean;
+  withWordBorders: boolean;
+  keepFormattingOnUpdate: boolean;
+  useExcelFormatting: boolean;
 };
 
 let loadedVariables: VariableItem[] = [];
 let isHighlightActive = false;
+let currentDateFormat: DateFormatMode = "short";
+let currentExcelFile: File | null = null;
+let tableOptionsByVariable: Record<string, TableOptions> = {};
 
 Office.onReady(() => {
   const loadButton = document.getElementById("loadExcelButton") as HTMLButtonElement | null;
   const updateAllButton = document.getElementById("updateAllButton") as HTMLButtonElement | null;
   const toggleHighlightButton = document.getElementById("toggleHighlightButton") as HTMLButtonElement | null;
+  const dateFormatSelect = document.getElementById("dateFormatSelect") as HTMLSelectElement | null;
 
   if (loadButton) loadButton.onclick = handleExcelLoad;
   if (updateAllButton) updateAllButton.onclick = handleUpdateAll;
   if (toggleHighlightButton) toggleHighlightButton.onclick = toggleHighlight;
+
+  if (dateFormatSelect) {
+    currentDateFormat = (dateFormatSelect.value as DateFormatMode) || "short";
+    dateFormatSelect.onchange = async () => {
+      currentDateFormat = (dateFormatSelect.value as DateFormatMode) || "short";
+      if (currentExcelFile) {
+        await loadExcelFile(currentExcelFile, false);
+        setStatus("Datumsformat geändert und Excel-Datei neu geladen.");
+      } else {
+        setStatus("Datumsformat geändert.");
+      }
+    };
+  }
 
   renderSavedFileInfo();
   renderHighlightButtonState();
@@ -42,15 +69,21 @@ Office.onReady(() => {
 
 async function handleExcelLoad(): Promise<void> {
   const fileInput = document.getElementById("excelFile") as HTMLInputElement | null;
-  const variablesList = document.getElementById("variablesList") as HTMLDivElement | null;
-
-  if (!fileInput || !variablesList) return;
+  if (!fileInput) return;
 
   const file = fileInput.files?.[0];
   if (!file) {
     setStatus("Bitte zuerst eine Excel-Datei auswählen.");
     return;
   }
+
+  currentExcelFile = file;
+  await loadExcelFile(file, true);
+}
+
+async function loadExcelFile(file: File, saveMeta: boolean): Promise<void> {
+  const variablesList = document.getElementById("variablesList") as HTMLDivElement | null;
+  if (!variablesList) return;
 
   try {
     const arrayBuffer = await file.arrayBuffer();
@@ -82,14 +115,25 @@ async function handleExcelLoad(): Promise<void> {
         usageCount: 0,
         status: "not-inserted",
       });
+
+      if (resolved.isBlock && !tableOptionsByVariable[variableName]) {
+        tableOptionsByVariable[variableName] = {
+          fitWidth: true,
+          withWordBorders: true,
+          keepFormattingOnUpdate: true,
+          useExcelFormatting: false,
+        };
+      }
     }
 
     loadedVariables = result;
 
-    await saveLinkedFileMeta({
-      fileName: file.name,
-      lastLoadedAt: new Date().toLocaleString("de-DE"),
-    });
+    if (saveMeta) {
+      await saveLinkedFileMeta({
+        fileName: file.name,
+        lastLoadedAt: new Date().toLocaleString("de-DE"),
+      });
+    }
 
     renderSavedFileInfo();
 
@@ -118,18 +162,17 @@ async function handleUpdateAll(): Promise<void> {
 
     await Word.run(async (context) => {
       const controls = context.document.contentControls;
-      controls.load("items/tag,title,text");
+      controls.load("items/tag");
       await context.sync();
 
       for (const control of controls.items) {
-        const meta = parseControlMeta(control.tag, control.title);
+        const meta = parseControlMeta(control.tag);
         if (!meta) continue;
 
         const variable = loadedVariables.find((v) => v.name === meta.variableName);
         if (!variable) continue;
 
-        const newText = buildRenderedText(variable, meta.mode, meta.prefix, meta.suffix);
-        control.insertText(newText, Word.InsertLocation.replace);
+        await renderVariableIntoControl(context, control, variable, meta, true);
         updatedCount++;
       }
 
@@ -158,16 +201,15 @@ async function updateSingleVariable(variableName: string): Promise<void> {
 
     await Word.run(async (context) => {
       const controls = context.document.contentControls;
-      controls.load("items/tag,title,text");
+      controls.load("items/tag");
       await context.sync();
 
       for (const control of controls.items) {
-        const meta = parseControlMeta(control.tag, control.title);
+        const meta = parseControlMeta(control.tag);
         if (!meta) continue;
         if (meta.variableName !== variableName) continue;
 
-        const newText = buildRenderedText(variable, meta.mode, meta.prefix, meta.suffix);
-        control.insertText(newText, Word.InsertLocation.replace);
+        await renderVariableIntoControl(context, control, variable, meta, true);
         updatedCount++;
       }
 
@@ -204,11 +246,11 @@ async function refreshUsageStatus(): Promise<void> {
 
     await Word.run(async (context) => {
       const controls = context.document.contentControls;
-      controls.load("items/tag,title,text");
+      controls.load("items/tag,text");
       await context.sync();
 
       for (const control of controls.items) {
-        const meta = parseControlMeta(control.tag, control.title);
+        const meta = parseControlMeta(control.tag);
         if (!meta) continue;
 
         const variable = variableMap.get(meta.variableName);
@@ -216,13 +258,17 @@ async function refreshUsageStatus(): Promise<void> {
 
         variable.usageCount += 1;
 
-        const expectedText = buildRenderedText(variable, meta.mode, meta.prefix, meta.suffix);
+        const expectedText =
+          meta.mode === "single"
+            ? variable.displayValue
+            : variable.matrix.map((row) => row.join(" ")).join("\n");
+
         const currentText = control.text ?? "";
 
         const matches =
-          meta.mode === "block"
-            ? textsEqualForBlockStatus(currentText, expectedText)
-            : textsEqualForInlineStatus(currentText, expectedText);
+          meta.mode === "single"
+            ? textsEqualForInlineStatus(currentText, expectedText)
+            : textsEqualForBlockStatus(currentText, expectedText);
 
         if (variable.status !== "outdated") {
           variable.status = matches ? "up-to-date" : "outdated";
@@ -267,11 +313,11 @@ async function toggleHighlight(): Promise<void> {
 async function applyHighlightToAllVariables(enable: boolean): Promise<void> {
   await Word.run(async (context) => {
     const controls = context.document.contentControls;
-    controls.load("items/tag,title");
+    controls.load("items/tag");
     await context.sync();
 
     for (const control of controls.items) {
-      const meta = parseControlMeta(control.tag, control.title);
+      const meta = parseControlMeta(control.tag);
       if (!meta) continue;
 
       const range = control.getRange();
@@ -328,6 +374,36 @@ function renderVariables(variables: VariableItem[]): void {
         ? escapeHtml(item.displayValue).replace(/\n/g, "<br/>")
         : escapeHtml(item.displayValue);
 
+      const savedOptions = tableOptionsByVariable[item.name] || {
+        fitWidth: true,
+        withWordBorders: true,
+        keepFormattingOnUpdate: true,
+        useExcelFormatting: false,
+      };
+
+      const optionsHtml = item.isBlock
+        ? `
+          <div style="margin-top:10px; display:grid; gap:8px;">
+            <label style="font-size:12px; color:#444;">
+              <input type="checkbox" id="excelfmt-${index}" ${savedOptions.useExcelFormatting ? "checked" : ""} />
+              Excel-Format übernehmen
+            </label>
+            <label style="font-size:12px; color:#444;">
+              <input type="checkbox" id="fit-${index}" ${savedOptions.fitWidth ? "checked" : ""} />
+              Seitenbreite anpassen
+            </label>
+            <label style="font-size:12px; color:#444;">
+              <input type="checkbox" id="borders-${index}" ${savedOptions.withWordBorders ? "checked" : ""} />
+              Word-Rahmen erstellen
+            </label>
+            <label style="font-size:12px; color:#444;">
+              <input type="checkbox" id="keepfmt-${index}" ${savedOptions.keepFormattingOnUpdate ? "checked" : ""} />
+              Formatierung bei Aktualisierung beibehalten
+            </label>
+          </div>
+        `
+        : ``;
+
       return `
         <div style="margin-bottom:12px; padding:10px; border:1px solid #ccc; border-radius:4px;">
           <div style="font-size:13px; line-height:1.4;">
@@ -339,13 +415,7 @@ function renderVariables(variables: VariableItem[]): void {
 
           <div style="margin-top:8px; padding:8px; background:#f7f7f7; border-radius:4px; white-space:pre-wrap;">${preview}</div>
 
-          <div style="margin-top:10px;">
-            <label style="font-size:12px; color:#444;">Einfügemodus:</label>
-            <select id="mode-${index}" style="width:100%; margin-top:4px;">
-              <option value="inline">Inline</option>
-              <option value="block"${item.isBlock ? " selected" : ""}>Block</option>
-            </select>
-          </div>
+          ${optionsHtml}
 
           <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
             <button data-index="${index}" class="insertVariableButton ms-Button ms-Button--primary">
@@ -369,10 +439,8 @@ function renderVariables(variables: VariableItem[]): void {
       const variable = loadedVariables[index];
       if (!variable) return;
 
-      const modeSelect = document.getElementById(`mode-${index}`) as HTMLSelectElement | null;
-      const mode = (modeSelect?.value as "inline" | "block") || "inline";
-
-      await insertVariableAsContentControl(variable, mode);
+      const meta = getMetaFromUi(index, variable);
+      await insertVariable(variable, meta);
     });
   });
 
@@ -384,32 +452,78 @@ function renderVariables(variables: VariableItem[]): void {
       const variable = loadedVariables[index];
       if (!variable) return;
 
+      const meta = getMetaFromUi(index, variable);
+      tableOptionsByVariable[variable.name] = {
+        fitWidth: meta.fitWidth,
+        withWordBorders: meta.withWordBorders,
+        keepFormattingOnUpdate: meta.keepFormattingOnUpdate,
+        useExcelFormatting: meta.useExcelFormatting,
+      };
+
       await updateSingleVariable(variable.name);
     });
   });
 }
 
-async function insertVariableAsContentControl(variable: VariableItem, mode: "inline" | "block"): Promise<void> {
+function getMetaFromUi(index: number, variable: VariableItem): ParsedControlMeta {
+  if (!variable.isBlock) {
+    return {
+      variableName: variable.name,
+      mode: "single",
+      fitWidth: false,
+      withWordBorders: false,
+      keepFormattingOnUpdate: true,
+      useExcelFormatting: false,
+    };
+  }
+
+  const excelFmtCheckbox = document.getElementById(`excelfmt-${index}`) as HTMLInputElement | null;
+  const fitCheckbox = document.getElementById(`fit-${index}`) as HTMLInputElement | null;
+  const bordersCheckbox = document.getElementById(`borders-${index}`) as HTMLInputElement | null;
+  const keepFmtCheckbox = document.getElementById(`keepfmt-${index}`) as HTMLInputElement | null;
+
+  const meta: ParsedControlMeta = {
+    variableName: variable.name,
+    mode: "table",
+    fitWidth: !!fitCheckbox?.checked,
+    withWordBorders: !!bordersCheckbox?.checked,
+    keepFormattingOnUpdate: !!keepFmtCheckbox?.checked,
+    useExcelFormatting: !!excelFmtCheckbox?.checked,
+  };
+
+  tableOptionsByVariable[variable.name] = {
+    fitWidth: meta.fitWidth,
+    withWordBorders: meta.withWordBorders,
+    keepFormattingOnUpdate: meta.keepFormattingOnUpdate,
+    useExcelFormatting: meta.useExcelFormatting,
+  };
+
+  return meta;
+}
+
+async function insertVariable(variable: VariableItem, meta: ParsedControlMeta): Promise<void> {
   try {
     await Word.run(async (context) => {
-      const range = context.document.getSelection();
-      range.load("text");
+      const selection = context.document.getSelection();
+      selection.load("text");
       await context.sync();
 
-      const selectedText = range.text ?? "";
-      const prefix = selectedText.match(/^\s*/)?.[0] ?? "";
-      const suffix = selectedText.match(/\s*$/)?.[0] ?? "";
+      const control = selection.insertContentControl();
+      control.tag = buildTag(meta);
+      control.title = `Excel-Variable: ${variable.name}`;
+      control.appearance = "BoundingBox";
+      control.cannotDelete = false;
+      control.cannotEdit = false;
+      control.placeholderText = "";
 
-      const contentControl = range.insertContentControl();
+      await renderVariableIntoControl(context, control, variable, meta, false);
 
-      contentControl.tag = buildRichTag(variable.name, mode, prefix, suffix);
-      contentControl.title = `Excel-Variable: ${variable.name}`;
-      contentControl.appearance = "BoundingBox";
-      contentControl.cannotDelete = false;
-      contentControl.cannotEdit = false;
-
-      const renderedText = buildRenderedText(variable, mode, prefix, suffix);
-      contentControl.insertText(renderedText, Word.InsertLocation.replace);
+      if (meta.mode === "single") {
+        await moveCursorOutsideSingleControl(context, control);
+      } else {
+        const cursorRange = control.getRange("After");
+        cursorRange.select();
+      }
 
       await context.sync();
     });
@@ -427,53 +541,130 @@ async function insertVariableAsContentControl(variable: VariableItem, mode: "inl
   }
 }
 
-function parseControlMeta(tag: string | undefined, title: string | undefined): ParsedControlMeta | null {
-  if (!tag) return null;
+async function moveCursorOutsideSingleControl(context: Word.RequestContext, control: Word.ContentControl): Promise<void> {
+  const afterRange = control.getRange("After");
+  afterRange.load("text");
+  await context.sync();
 
-  if (tag.startsWith("excelvar|")) {
-    const parts = tag.split("|");
-    if (parts.length >= 5) {
-      return {
-        variableName: decodeSafe(parts[1]),
-        mode: decodeSafe(parts[2]) === "block" ? "block" : "inline",
-        prefix: decodeSafe(parts[3]),
-        suffix: decodeSafe(parts[4]),
-      };
+  const nextText = afterRange.text ?? "";
+
+  if (nextText.length === 0) {
+    afterRange.insertText(" ", Word.InsertLocation.start);
+    await context.sync();
+  } else {
+    const firstChar = nextText.charAt(0);
+    if (!/\s/.test(firstChar) && !/^[,.;:!?)}\]»]/.test(firstChar)) {
+      afterRange.insertText(" ", Word.InsertLocation.start);
+      await context.sync();
     }
   }
 
-  if (tag.startsWith("excelvar:")) {
-    const variableName = tag.substring("excelvar:".length);
-    return {
-      variableName,
-      mode: inferModeFromTitleOrDefault(title),
-      prefix: "",
-      suffix: "",
-    };
+  const finalAfter = control.getRange("After");
+  finalAfter.select();
+}
+
+async function renderVariableIntoControl(
+  context: Word.RequestContext,
+  control: Word.ContentControl,
+  variable: VariableItem,
+  meta: ParsedControlMeta,
+  isUpdate: boolean
+): Promise<void> {
+  if (meta.mode === "table" && variable.isBlock) {
+    if (isUpdate && meta.keepFormattingOnUpdate) {
+      const range = control.getRange();
+      const tables = range.tables;
+      tables.load("items");
+      await context.sync();
+
+      if (tables.items.length > 0) {
+        const table = tables.items[0];
+        const existingRowCount = table.rowCount;
+        const existingColCount = table.getCell(0, 0) ? variable.matrix[0]?.length ?? 0 : variable.matrix[0]?.length ?? 0;
+
+        if (existingRowCount === variable.matrix.length) {
+          for (let r = 0; r < variable.matrix.length; r++) {
+            const row = variable.matrix[r];
+            for (let c = 0; c < row.length; c++) {
+              const cell = table.getCell(r, c);
+              cell.body.insertText(row[c], Word.InsertLocation.replace);
+            }
+          }
+          return;
+        }
+      }
+    }
+
+    control.clear();
+    const html = buildHtmlTable(
+      variable.matrix,
+      meta.fitWidth,
+      meta.withWordBorders,
+      meta.useExcelFormatting
+    );
+    control.insertHtml(html, Word.InsertLocation.replace);
+    return;
   }
 
-  return null;
+  control.insertText(variable.displayValue, Word.InsertLocation.replace);
 }
 
-function inferModeFromTitleOrDefault(title: string | undefined): "inline" | "block" {
-  if (!title) return "inline";
-  const lower = title.toLowerCase();
-  if (lower.includes("block")) return "block";
-  return "inline";
-}
-
-function buildRichTag(
-  variableName: string,
-  mode: "inline" | "block",
-  prefix: string,
-  suffix: string
+function buildHtmlTable(
+  matrix: string[][],
+  fitWidth: boolean,
+  withWordBorders: boolean,
+  useExcelFormatting: boolean
 ): string {
+  const tableWidth = fitWidth ? "width:100%;" : "width:auto;";
+  const borderStyle = withWordBorders ? "1px solid #666" : "none";
+  const cellPadding = "6px 8px";
+  const extraStyle = useExcelFormatting ? "font-family:Calibri, Arial, sans-serif; font-size:11pt;" : "";
+
+  const rowsHtml = matrix
+    .map(
+      (row) =>
+        "<tr>" +
+        row
+          .map(
+            (cell) =>
+              `<td style="border:${borderStyle}; padding:${cellPadding}; vertical-align:top; ${extraStyle}">${escapeHtml(
+                cell
+              )}</td>`
+          )
+          .join("") +
+        "</tr>"
+    )
+    .join("");
+
+  return `<table style="border-collapse:collapse;${tableWidth}${extraStyle}">${rowsHtml}</table>`;
+}
+
+function parseControlMeta(tag: string | undefined): ParsedControlMeta | null {
+  if (!tag) return null;
+  if (!tag.startsWith("excelvar|")) return null;
+
+  const parts = tag.split("|");
+  if (parts.length < 7) return null;
+
+  return {
+    variableName: decodeSafe(parts[1]),
+    mode: decodeSafe(parts[2]) === "table" ? "table" : "single",
+    fitWidth: decodeSafe(parts[3]) === "1",
+    withWordBorders: decodeSafe(parts[4]) === "1",
+    keepFormattingOnUpdate: decodeSafe(parts[5]) === "1",
+    useExcelFormatting: decodeSafe(parts[6]) === "1",
+  };
+}
+
+function buildTag(meta: ParsedControlMeta): string {
   return [
     "excelvar",
-    encodeURIComponent(variableName),
-    encodeURIComponent(mode),
-    encodeURIComponent(prefix),
-    encodeURIComponent(suffix),
+    encodeURIComponent(meta.variableName),
+    encodeURIComponent(meta.mode),
+    encodeURIComponent(meta.fitWidth ? "1" : "0"),
+    encodeURIComponent(meta.withWordBorders ? "1" : "0"),
+    encodeURIComponent(meta.keepFormattingOnUpdate ? "1" : "0"),
+    encodeURIComponent(meta.useExcelFormatting ? "1" : "0"),
   ].join("|");
 }
 
@@ -494,10 +685,7 @@ function textsEqualForBlockStatus(currentText: string, expectedText: string): bo
 }
 
 function normalizeInlineText(value: string): string {
-  return value
-    .replace(/\u00A0/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return value.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function normalizeBlockText(value: string): string {
@@ -558,11 +746,7 @@ function resolveNamedReferenceData(
       ? matrix.map((row) => row.join(" | ")).join("\n")
       : (matrix[0]?.[0] ?? "");
 
-    return {
-      displayValue,
-      matrix,
-      isBlock,
-    };
+    return { displayValue, matrix, isBlock };
   } catch {
     return {
       displayValue: ref,
@@ -602,7 +786,7 @@ function getCellDisplayValue(cell: XLSX.CellObject | undefined): string {
   }
 
   if (typeof anyCell.w === "string" && anyCell.w.length > 0) {
-    const maybeDate = tryNormalizeEnglishDateToGerman(anyCell.w);
+    const maybeDate = tryNormalizeExcelDateToGerman(anyCell.w);
     if (maybeDate) return maybeDate;
 
     const maybePercent = tryNormalizePercentToGerman(anyCell.w);
@@ -625,10 +809,20 @@ function guessFractionDigitsFromFormat(formatString: string): number {
 }
 
 function formatGermanDate(date: Date): string {
-  return new Intl.DateTimeFormat("de-DE").format(date);
+  if (currentDateFormat === "long") {
+    const day = String(date.getDate()).padStart(2, "0");
+    const monthName = new Intl.DateTimeFormat("de-DE", { month: "long" }).format(date);
+    const year = String(date.getFullYear());
+    return `${day}. ${monthName} ${year}`;
+  }
+
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = String(date.getFullYear());
+  return `${day}.${month}.${year}`;
 }
 
-function tryNormalizeEnglishDateToGerman(value: string): string | null {
+function tryNormalizeExcelDateToGerman(value: string): string | null {
   const trimmed = value.trim();
 
   const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -647,6 +841,15 @@ function tryNormalizeEnglishDateToGerman(value: string): string | null {
     return formatGermanDate(new Date(year, month, day));
   }
 
+  const deMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+  if (deMatch) {
+    const day = Number(deMatch[1]);
+    const month = Number(deMatch[2]) - 1;
+    let year = Number(deMatch[3]);
+    if (year < 100) year += 2000;
+    return formatGermanDate(new Date(year, month, day));
+  }
+
   return null;
 }
 
@@ -659,25 +862,6 @@ function tryNormalizePercentToGerman(value: string): string | null {
   if (Number.isNaN(num)) return null;
 
   return `${num.toLocaleString("de-DE")} %`;
-}
-
-function buildRenderedText(
-  variable: VariableItem,
-  mode: "inline" | "block",
-  prefix = "",
-  suffix = ""
-): string {
-  let core = "";
-
-  if (mode === "block") {
-    core = variable.matrix.map((row) => row.join("\t")).join("\n");
-  } else if (variable.isBlock) {
-    core = variable.matrix.map((row) => row.join(" ")).join(" ");
-  } else {
-    core = variable.displayValue;
-  }
-
-  return `${prefix}${core}${suffix}`;
 }
 
 async function saveLinkedFileMeta(meta: SavedFileMeta): Promise<void> {

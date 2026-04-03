@@ -19,7 +19,6 @@
 <body class="ms-font-m ms-Fabric" style="padding: 16px;">
   <main id="app-body">
     <h1 class="ms-font-xl">Excel-Variablen</h1>
-    <p class="ms-font-m">Excel-Datei auswählen, Variablen laden und im Word-Dokument verwalten.</p>
 
     <div style="margin-bottom: 16px;">
       <input type="file" id="excelFile" accept=".xlsx,.xls" />
@@ -37,6 +36,14 @@
       <button id="toggleHighlightButton" class="ms-Button">
         <span class="ms-Button-label">Variablen hervorheben</span>
       </button>
+    </div>
+
+    <div style="margin-bottom: 16px;">
+      <label for="dateFormatSelect" style="font-size:13px; color:#444;">Datumsformat:</label>
+      <select id="dateFormatSelect" style="width:100%; margin-top:4px;">
+        <option value="short" selected>Kurz (03.04.2026)</option>
+        <option value="long">Lang (03. April 2026)</option>
+      </select>
     </div>
 
     <div id="linkedFileInfo" style="margin-bottom:12px; font-size:13px; color:#444;"></div>
