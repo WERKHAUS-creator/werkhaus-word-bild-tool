@@ -1,8 +1,16 @@
 {
-  "plugins": [
-    "office-addins"
-  ],
-  "extends": [
-    "plugin:office-addins/recommended"
-  ]
+  "env": {
+    "browser": true,
+    "es2021": true
+  },
+  "plugins": ["office-addins"],
+  "extends": ["plugin:office-addins/recommended"],
+  "parserOptions": {
+    "ecmaVersion": 2021,
+    "sourceType": "module"
+  },
+  "globals": {
+    "Office": "readonly",
+    "Word": "readonly"
+  }
 }

@@ -6,17 +6,12 @@ import type { ImageItem } from "./types";
 
 export function getResolvedCaptionText(item: ImageItem, figureNumber: number): string {
   const trimmedCaption = item.caption?.trim() || "";
-  const trimmedName = item.name?.trim() || "";
 
   if (trimmedCaption.length > 0) {
     return `Abbildung ${figureNumber}: ${trimmedCaption}`;
   }
 
-  if (trimmedName.length > 0) {
-    return `Abbildung ${figureNumber}: ${trimmedName}`;
-  }
-
-  return `Abbildung ${figureNumber}: Bild ohne Bezeichnung`;
+  return `Abbildung ${figureNumber}:`;
 }
 
 export function shouldInsertCaption(item: ImageItem): boolean {
