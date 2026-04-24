@@ -61,12 +61,12 @@ export async function importImageFiles(
 ): Promise<ImportImageFilesResult> {
   // Stabiler Kernbereich: derselbe Importpfad fuer Auswahl, Ordner und Drop.
   const allFiles = Array.from(files);
-  const imageFiles = allFiles.filter((file) => isSupportedImageFile(file));
+  const invalidFiles = allFiles.filter((file) => !isSupportedImageFile(file));
+  const imageFiles = allFiles.filter((file) => !invalidFiles.includes(file));
   const nextItems = [...existingItems];
+  const knownHashes = new Set(nextItems.map((item) => item.hash));
   const invalidFileCount = allFiles.length - imageFiles.length;
-  const invalidFileNames = allFiles
-    .filter((file) => !isSupportedImageFile(file))
-    .map((file) => file.name);
+  const invalidFileNames = invalidFiles.map((file) => file.name);
 
   if (imageFiles.length === 0) {
     return {
@@ -101,8 +101,7 @@ export async function importImageFiles(
         hashHex = makeFileKey(file);
       }
 
-      const exists = nextItems.some((item) => item.hash === hashHex);
-      if (exists) {
+      if (knownHashes.has(hashHex)) {
         skippedCount += 1;
         continue;
       }
@@ -137,6 +136,7 @@ export async function importImageFiles(
           height: imageDimensions?.height,
         },
       });
+      knownHashes.add(hashHex);
 
       if (!stored.importedAt) {
         persistence.setMeta(hashHex, {

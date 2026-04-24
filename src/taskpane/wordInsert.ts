@@ -30,8 +30,6 @@ export async function insertSingleImageAtSelection(
 
     const pic = selection.insertInlinePictureFromBase64(base64, Word.InsertLocation.replace);
 
-    await context.sync();
-
     try {
       pic.width = size.width;
       pic.height = size.height;
