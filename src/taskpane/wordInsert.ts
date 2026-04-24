@@ -3,6 +3,7 @@ import { getResolvedCaptionText, shouldInsertCaption } from "./captions";
 import type { ImageItem } from "./types";
 
 const CM_TO_POINTS = WORD_PT_PER_INCH / 2.54;
+const SPACER_SPACE_AFTER_POINTS = 10;
 
 interface InsertSingleImageOptions {
   includeCaption?: boolean;
@@ -39,12 +40,24 @@ export async function insertSingleImageAtSelection(
 
     await context.sync();
 
+    try {
+      const pictureParagraph = pic.getRange().paragraphs.getFirst();
+      pictureParagraph.spaceBefore = 0;
+      pictureParagraph.spaceAfter = 0;
+      setParagraphKeepWithNext(pictureParagraph, true);
+    } catch (e) {
+      console.warn("Konnte Bildabsatz nicht stabilisieren:", e);
+    }
+
     let continuationRange: Word.Range;
     if (shouldIncludeCaption) {
       const captionText = getResolvedCaptionText(item, figureNumber);
       continuationRange = insertCaptionAfterPicture(pic, captionText);
     } else {
-      continuationRange = pic.getRange(Word.RangeLocation.end);
+      const pictureEndRange = pic.getRange(Word.RangeLocation.end);
+      const spacerParagraph = pictureEndRange.insertParagraph("", Word.InsertLocation.after);
+      configureSpacerParagraph(spacerParagraph);
+      continuationRange = spacerParagraph.getRange(Word.RangeLocation.end);
     }
 
     await context.sync();
@@ -107,17 +120,75 @@ function insertCaptionAfterPicture(picture: Word.InlinePicture, captionText: str
   captionParagraph.rightIndent = remainingWidth;
   captionParagraph.spaceBefore = 0;
   captionParagraph.spaceAfter = 0;
+  setParagraphKeepTogether(captionParagraph, true);
+  setParagraphKeepWithNext(captionParagraph, true);
 
   const spacerParagraph = captionParagraph.insertParagraph("", Word.InsertLocation.after);
+  configureSpacerParagraph(spacerParagraph);
 
-  return spacerParagraph.getRange(Word.RangeLocation.after);
+  return spacerParagraph.getRange(Word.RangeLocation.end);
+}
+
+function configureSpacerParagraph(paragraph: Word.Paragraph): void {
+  paragraph.spaceBefore = 0;
+  paragraph.spaceAfter = SPACER_SPACE_AFTER_POINTS;
+  setParagraphKeepWithNext(paragraph, false);
+}
+
+function setParagraphKeepTogether(paragraph: Word.Paragraph, value: boolean): void {
+  try {
+    const paragraphWithKeep = paragraph as unknown as {
+      keepTogether?: boolean;
+      paragraphFormat?: { keepTogether?: boolean };
+      format?: { keepTogether?: boolean };
+    };
+
+    if (paragraphWithKeep.paragraphFormat) {
+      paragraphWithKeep.paragraphFormat.keepTogether = value;
+      return;
+    }
+
+    if (paragraphWithKeep.format) {
+      paragraphWithKeep.format.keepTogether = value;
+      return;
+    }
+
+    paragraphWithKeep.keepTogether = value;
+  } catch (e) {
+    console.warn("Konnte keepTogether nicht setzen:", e);
+  }
+}
+
+function setParagraphKeepWithNext(paragraph: Word.Paragraph, value: boolean): void {
+  try {
+    const paragraphWithKeep = paragraph as unknown as {
+      keepWithNext?: boolean;
+      paragraphFormat?: { keepWithNext?: boolean };
+      format?: { keepWithNext?: boolean };
+    };
+
+    if (paragraphWithKeep.paragraphFormat) {
+      paragraphWithKeep.paragraphFormat.keepWithNext = value;
+      return;
+    }
+
+    if (paragraphWithKeep.format) {
+      paragraphWithKeep.format.keepWithNext = value;
+      return;
+    }
+
+    paragraphWithKeep.keepWithNext = value;
+  } catch (e) {
+    console.warn("Konnte keepWithNext nicht setzen:", e);
+  }
 }
 
 async function placeCursorAfterRange(
   context: Word.RequestContext,
   range: Word.Range
 ): Promise<void> {
-  range.select("End");
+  const cursorRange = range.getRange(Word.RangeLocation.end);
+  cursorRange.select();
   await context.sync();
 }
 
