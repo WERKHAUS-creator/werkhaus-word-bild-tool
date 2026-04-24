@@ -1,62 +1,759 @@
-<!-- Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT License. -->
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WERKHAUS BILD TOOL TEST</title>
+    <script
+      type="text/javascript"
+      src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"
+    ></script>
+    <style>
+      :root {
+        --preview-size: 100px;
+        --insert-action-width: 120px;
+        --insert-action-height: 56px;
+        --icon-button-size: 36px;
+        --compact-control-size: 28px;
+        --bulk-insert-width: 168px;
+      }
 
-<head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Excel Word Variablen</title>
+      * {
+        box-sizing: border-box;
+      }
 
-  <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+      body {
+        margin: 0;
+        padding: 16px;
+        font-family: Arial, sans-serif;
+        background: #f5f5f5;
+        color: #222;
+      }
 
-  <link rel="stylesheet"
-    href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css" />
+      .container {
+        max-width: 100%;
+      }
 
-  <link href="taskpane.css" rel="stylesheet" type="text/css" />
-</head>
+      .section {
+        background: #ffffff;
+        border: 1px solid #d8d8d8;
+        border-radius: 10px;
+        padding: 14px;
+        margin-bottom: 16px;
+      }
 
-<body class="ms-font-m ms-Fabric" style="padding: 16px;">
-  <main id="app-body">
-    <h1 class="ms-font-xl">Excel-Variablen</h1>
+      h1 {
+        margin: 0 0 8px 0;
+        font-size: 20px;
+      }
 
-    <div style="margin-bottom: 8px; color:#444; font-size:13px;">
-      Excel-Datei auswählen und danach Inhalte im Word-Dokument aktualisieren.
-    </div>
+      h2 {
+        margin: 0 0 10px 0;
+        font-size: 16px;
+      }
 
-    <div style="margin-bottom: 16px;">
-      <input type="file" id="excelFile" accept=".xlsx,.xls" />
-    </div>
+      p {
+        margin: 0 0 10px 0;
+      }
 
-    <div style="display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap;">
-      <button id="loadExcelButton" class="ms-Button ms-Button--primary">
-        <span class="ms-Button-label">Excel-Datei auswählen</span>
-      </button>
+      .toolbar-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
 
-      <button id="updateAllButton" class="ms-Button">
-        <span class="ms-Button-label">Inhalte aktualisieren</span>
-      </button>
+      .button-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: stretch;
+      }
 
-      <button id="toggleHighlightButton" class="ms-Button">
-        <span class="ms-Button-label">Variablen hervorheben</span>
-      </button>
-    </div>
+      .toolbar-row button {
+        padding: 8px 10px;
+        border: 1px solid #999;
+        border-radius: 5px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 13px;
+        line-height: 1.2;
+        transition:
+          background 0.15s ease,
+          border-color 0.15s ease,
+          box-shadow 0.15s ease;
+      }
 
-    <div style="margin-bottom: 16px;">
-      <label for="dateFormatSelect" style="font-size:13px; color:#444;">Datumsanzeige:</label>
-      <select id="dateFormatSelect" style="width:100%; margin-top:4px;">
-        <option value="short" selected>Kurz (03.04.2026)</option>
-        <option value="long">Lang (03. April 2026)</option>
-      </select>
-    </div>
+      .button-bar button {
+        flex: 0 0 120px;
+        width: 120px;
+        min-height: 36px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: normal;
+        text-align: center;
+      }
 
-    <div id="linkedFileInfo" style="margin-bottom:12px; font-size:13px; color:#444;"></div>
-    <div id="highlightStateInfo" style="margin-bottom:12px; font-size:13px; color:#444;">Hervorhebung: aus</div>
-    <div id="statusMessage" style="margin-bottom:16px; color:#444;"></div>
+      .bulk-actions {
+        margin-top: 4px;
+        align-items: stretch;
+      }
 
-    <h2 class="ms-font-l">Variablen</h2>
-    <div id="variablesList">Noch keine Variablen geladen.</div>
-  </main>
-</body>
+      .bulk-actions button {
+        flex: 0 0 var(--insert-action-width);
+      }
 
+      .bulk-actions .bulk-insert-button {
+        flex-basis: 120px;
+        width: 120px;
+      }
+
+      .bulk-actions .insert-button {
+        padding: 8px 10px;
+        min-height: 36px;
+        border: 1px solid #999;
+        border-radius: 5px;
+        background: #fff;
+        color: #222;
+        font-size: 13px;
+        font-weight: normal;
+        line-height: 1.2;
+        box-shadow: none;
+      }
+
+      .bulk-actions .insert-button:hover {
+        background: #efefef;
+        border-color: #999;
+        box-shadow: none;
+      }
+
+      .bulk-actions .insert-button:active {
+        background: #efefef;
+        border-color: #999;
+      }
+
+      .bulk-actions .icon-text-action-button {
+        min-width: 120px;
+        min-height: 36px;
+        height: 36px;
+        max-height: 36px;
+        padding: 8px 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0;
+        line-height: 1.2;
+      }
+
+      .bulk-actions .insert-button-content {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        gap: 4px;
+      }
+
+      .toolbar-row button:hover {
+        background: #efefef;
+      }
+
+      .toolbar-row button:focus-visible {
+        outline: 2px solid #0078d7;
+        outline-offset: 2px;
+      }
+
+      .slider-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        font-size: 12px;
+      }
+
+      .slider-wrap input[type="range"] {
+        width: 160px;
+        max-width: 160px;
+      }
+
+      .slider-wrap label,
+      .slider-wrap span {
+        font-size: 12px;
+      }
+
+      .select-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .select-wrap select {
+        min-width: 180px;
+        padding: 8px 10px;
+        border: 1px solid #bbb;
+        border-radius: 6px;
+        background: #fff;
+        font-size: 14px;
+      }
+
+      .hidden-input {
+        display: none;
+      }
+
+      .hint {
+        font-size: 13px;
+        color: #666;
+      }
+
+      .drop-zone {
+        margin-top: 12px;
+        padding: 16px;
+        border: 2px dashed #b7b7b7;
+        border-radius: 8px;
+        background: #fafafa;
+        color: #555;
+        text-align: center;
+        transition:
+          border-color 0.15s ease,
+          background 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+
+      .drop-zone strong {
+        display: block;
+        margin-bottom: 4px;
+        color: #333;
+      }
+
+      .drop-zone-active {
+        border-color: #0078d7;
+        background: #eef6fd;
+        box-shadow: 0 0 0 1px rgba(0, 120, 215, 0.15);
+      }
+
+      .image-list {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .image-card {
+        display: grid;
+        grid-template-columns: 40px minmax(30px, var(--preview-size)) minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: start;
+        background: #fafafa;
+        border: 1px solid #d7d7d7;
+        border-radius: 10px;
+        padding: 12px;
+        min-width: 0;
+        transition:
+          box-shadow 0.12s ease,
+          transform 0.12s ease;
+        cursor: grab;
+      }
+
+      .image-card.drag-over {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        transform: translateY(-2px);
+      }
+
+      .image-card.dragging {
+        opacity: 0.85;
+        cursor: grabbing;
+      }
+
+      .image-position {
+        width: 40px;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        align-items: center;
+        text-align: center;
+        font-weight: bold;
+      }
+
+      .image-number {
+        width: var(--compact-control-size);
+        height: var(--compact-control-size);
+        min-width: var(--compact-control-size);
+        min-height: var(--compact-control-size);
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        background: #fff;
+        font-size: 12px;
+        line-height: 1;
+      }
+
+      .position-controls {
+        display: flex;
+        gap: 0;
+        justify-content: center;
+        align-items: center;
+        margin-top: 0;
+      }
+
+      .selection-wrap {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: var(--compact-control-size);
+        height: var(--compact-control-size);
+        min-width: var(--compact-control-size);
+        min-height: var(--compact-control-size);
+        margin-top: 0;
+        border: 1px solid #d7e0e8;
+        border-radius: 6px;
+        background: #fff;
+      }
+
+      .select-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #555;
+        user-select: none;
+      }
+
+      .select-label span {
+        display: none;
+      }
+
+      .select-label {
+        width: 100%;
+        height: 100%;
+        justify-content: center;
+        gap: 0;
+      }
+
+      .select-label input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: #0078d7;
+        cursor: pointer;
+      }
+
+      input[type="number"].pos-input::-webkit-outer-spin-button,
+      input[type="number"].pos-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+
+      input[type="number"].pos-input {
+        -moz-appearance: textfield;
+      }
+
+      .pos-input {
+        width: var(--compact-control-size);
+        height: var(--compact-control-size);
+        min-width: var(--compact-control-size);
+        min-height: var(--compact-control-size);
+        padding: 0;
+        margin-top: 0;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 12px;
+        text-align: center;
+      }
+
+      .preview-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-width: 0;
+      }
+
+      .image-content {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .image-preview {
+        width: var(--preview-size);
+        height: var(--preview-size);
+        max-width: var(--preview-size);
+        max-height: var(--preview-size);
+        object-fit: cover;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        background: #fff;
+        display: block;
+      }
+
+      .image-info {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .file-name {
+        font-size: 14px;
+        color: #333;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+
+      .file-meta {
+        font-size: 12px;
+        color: #666;
+      }
+
+      .small-info {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-top: 2px;
+      }
+
+      .small-info .info-line {
+        font-size: 12px;
+        color: #666;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+
+      .image-caption {
+        min-width: 0;
+        width: 100%;
+        margin-top: 0;
+      }
+
+      .caption-label {
+        font-size: 13px;
+        color: #444;
+        font-weight: bold;
+        margin-top: 0;
+      }
+
+      .caption-input {
+        width: 100%;
+        min-height: 88px;
+        resize: vertical;
+        padding: 8px;
+        border: 1px solid #bbb;
+        border-radius: 6px;
+        font-size: 14px;
+        font-family: Arial, sans-serif;
+        margin-top: 6px;
+        box-sizing: border-box;
+      }
+
+      .image-actions,
+      .image-actions-right {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        align-items: stretch;
+      }
+
+      .image-actions-right {
+        margin-left: auto;
+        justify-self: end;
+        align-self: start;
+        flex: 0 0 auto;
+      }
+
+      .insert-button {
+        border: 1px solid #c9d3df;
+        border-radius: 8px;
+        background: #fff;
+        color: #26435d;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        box-sizing: border-box;
+        text-align: center;
+      }
+
+      .icon-action-button {
+        width: var(--icon-button-size);
+        height: var(--icon-button-size);
+        min-width: var(--icon-button-size);
+        min-height: var(--icon-button-size);
+        max-height: var(--icon-button-size);
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      .icon-text-action-button {
+        width: var(--bulk-insert-width);
+        min-width: var(--bulk-insert-width);
+        height: var(--insert-action-height);
+        min-height: var(--insert-action-height);
+        max-height: var(--insert-action-height);
+        padding: 0 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        box-sizing: border-box;
+        line-height: 1;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: normal;
+        text-align: center;
+      }
+
+      .insert-button:hover {
+        border-color: #8eb9df;
+        box-shadow: 0 2px 5px rgba(38, 67, 93, 0.1);
+      }
+
+      .insert-button:active {
+        background: #f1f6fa;
+        border-color: #7ea7cb;
+      }
+
+      .insert-button:disabled {
+        background: #ccc;
+        border-color: #999;
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      .insert-button-content {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        gap: 4px;
+      }
+
+      .insert-button-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        line-height: 1;
+        flex: 0 0 20px;
+        position: relative;
+      }
+
+      .insert-button-icon::before,
+      .insert-button-icon::after {
+        content: "";
+        position: absolute;
+      }
+
+      .insert-button-icon-image {
+        border: 1.6px solid currentColor;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+
+      .insert-button-icon-image::before {
+        top: 3px;
+        right: 3px;
+        width: 4px;
+        height: 4px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .insert-button-icon-image::after {
+        left: 3px;
+        bottom: 3px;
+        width: 11px;
+        height: 7px;
+        background: currentColor;
+        clip-path: polygon(0 100%, 35% 35%, 58% 68%, 76% 48%, 100% 100%);
+      }
+
+      .insert-button-icon-text::before {
+        left: 2px;
+        top: 2px;
+        width: 16px;
+        height: 2px;
+        background: currentColor;
+        box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor;
+      }
+
+      .insert-button-icon-text::after {
+        left: 2px;
+        top: 14px;
+        width: 9px;
+        height: 2px;
+        background: currentColor;
+      }
+
+      .insert-button-primary:hover {
+        background: #005a9e;
+        border-color: #005a9e;
+        box-shadow: 0 2px 6px rgba(0, 90, 158, 0.2);
+      }
+
+      .insert-button-primary:active {
+        background: #004578;
+        border-color: #004578;
+      }
+
+      .insert-button-quiet {
+        background: #fff;
+        color: #36516b;
+        border-color: #d7e0e8;
+      }
+
+      .insert-button-quiet .insert-button-icon {
+        color: #36516b;
+      }
+
+      @media (max-width: 620px) {
+        .image-card {
+          grid-template-columns: 40px minmax(0, 1fr) auto;
+          gap: 10px;
+        }
+
+        .preview-wrap,
+        .image-content {
+          grid-column: 2 / 3;
+        }
+
+        .image-actions-right {
+          grid-column: 3 / 4;
+          grid-row: 1 / span 2;
+          margin-top: 8px;
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
+
+      #imageList.hide-info .image-info {
+        display: none;
+      }
+
+      #imageList.hide-captions .image-caption {
+        display: none;
+      }
+
+      .empty-state {
+        padding: 14px;
+        border: 1px dashed #bbb;
+        border-radius: 8px;
+        color: #666;
+        background: #fff;
+      }
+
+      .status-box {
+        min-height: 24px;
+        padding: 8px;
+        background: #fff;
+        border: 1px solid #d8d8d8;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <section class="section">
+        <h2>Status</h2>
+        <div id="statusMessage" class="status-box">Bereit.</div>
+      </section>
+
+      <section class="section">
+        <h2>Bilder / Ordner hinzufügen</h2>
+
+        <!-- Stabiler Kernbereich: vorhandene Import- und Listenlogik nicht mit Zusatzpfaden vermischen. -->
+        <div class="toolbar-row button-bar">
+          <button id="pickFilesButton" type="button">Dateien</button>
+          <button id="pickFolderButton" type="button">Ordner</button>
+          <button id="toggleInfoButton" type="button">Bild Infos</button>
+          <button id="toggleCaptionButton" type="button">Beschriftung</button>
+          <button id="clearImagesButton" type="button">Liste leeren</button>
+        </div>
+
+        <div class="toolbar-row">
+          <div class="slider-wrap">
+            <label for="previewSizeRange">Vorschaugröße</label>
+            <input type="range" id="previewSizeRange" min="100" max="500" value="100" />
+            <span id="previewSizeValue">100 px</span>
+          </div>
+
+          <div class="slider-wrap">
+            <label for="insertSizeRange">Lange Seite</label>
+            <input type="range" id="insertSizeRange" min="2" max="16" step="0.5" value="10" />
+            <span id="insertSizeValue">10.0 cm</span>
+          </div>
+        </div>
+
+        <div class="toolbar-row button-bar bulk-actions">
+          <button id="selectAllButton" type="button">Alle auswählen</button>
+          <button id="selectNoneButton" type="button">Alle abwählen</button>
+          <button
+            id="insertSelectedCaptionButton"
+            class="insert-button insert-button-primary icon-text-action-button bulk-insert-button"
+            type="button"
+          >
+            <span class="insert-button-content">
+              <span class="insert-button-icon insert-button-icon-text" aria-hidden="true"></span>
+              <span>Alle</span>
+            </span>
+          </button>
+          <button
+            id="insertSelectedButton"
+            class="insert-button insert-button-quiet icon-text-action-button bulk-insert-button"
+            type="button"
+          >
+            <span class="insert-button-content">
+              <span class="insert-button-icon insert-button-icon-image" aria-hidden="true"></span>
+              <span>Alle</span>
+            </span>
+          </button>
+        </div>
+
+        <input
+          id="imageUpload"
+          class="hidden-input"
+          type="file"
+          accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.gif,.bmp"
+          multiple
+        />
+
+        <input
+          id="folderUpload"
+          class="hidden-input"
+          type="file"
+          accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.gif,.bmp"
+          webkitdirectory
+          multiple
+        />
+      </section>
+
+      <section class="section">
+        <h2>Bildliste</h2>
+        <div id="imageList" class="image-list"></div>
+      </section>
+
+      <section class="section">
+        <h2>Drag &amp; Drop</h2>
+        <div id="imageDropZone" class="drop-zone" aria-label="Bilddateien hier ablegen">
+          <strong>Bilder hier hineinziehen</strong>
+          <span>Unterstützt: JPG, PNG, WEBP, TIF, TIFF, GIF, BMP</span>
+        </div>
+      </section>
+    </main>
+  </body>
 </html>

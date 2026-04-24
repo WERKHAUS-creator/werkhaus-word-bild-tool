@@ -1,1155 +1,886 @@
-import * as XLSX from "xlsx";
+import type { ImageItem } from "./types";
+import { IMAGE_FILE_INPUT_ACCEPT, importImageFiles } from "./importImages";
+import { createTaskpanePersistence } from "./persistence";
+import { insertSingleImageAtSelection } from "./wordInsert";
 
-// ============================================================================
-// BLOCK A - TYPEN UND GLOBALER STATE
-// STABIL: Nur ändern, wenn sich Datenstruktur oder Grundlogik ändert.
-// ============================================================================
+// Stabiler Kernbereich:
+// Bildimport, Bildauswahl und Einzelfoto-Einfuegen bleiben hier bewusst getrennt.
+// Nur bei nachgewiesenem Fehler an diesen Pfaden aendern.
+let imageItems: ImageItem[] = [];
+const DEFAULT_PREVIEW_SIZE_PX = 100;
+const MIN_PREVIEW_SIZE_PX = 100;
+const MAX_PREVIEW_SIZE_PX = 500;
+const MAX_INSERT_SIZE_CM = 16;
 
-type VariableStatus = "not-inserted" | "up-to-date" | "outdated";
-type DateFormatMode = "short" | "long";
+function initTaskpane() {
+  const { loadAllMeta, getMeta, setMeta } = createTaskpanePersistence();
+  const statusElement = document.getElementById("statusMessage");
+  const imageList = document.getElementById("imageList");
+  const dropZone = document.getElementById("imageDropZone");
 
-type VariableItem = {
-  name: string;
-  ref: string;
-  displayValue: string;
-  matrix: string[][];
-  isBlock: boolean;
-  usageCount: number;
-  status: VariableStatus;
-  colWidthsPx: number[];
-};
+  const imageUpload = document.getElementById("imageUpload") as HTMLInputElement | null;
+  const folderUpload = document.getElementById("folderUpload") as HTMLInputElement | null;
 
-type SavedFileMeta = {
-  fileName: string;
-  lastLoadedAt: string;
-};
+  const pickFilesButton = document.getElementById("pickFilesButton");
+  const pickFolderButton = document.getElementById("pickFolderButton");
+  const clearImagesButton = document.getElementById("clearImagesButton");
+  const toggleInfoButton = document.getElementById("toggleInfoButton");
+  const toggleCaptionButton = document.getElementById("toggleCaptionButton");
+  const selectAllButton = document.getElementById("selectAllButton");
+  const selectNoneButton = document.getElementById("selectNoneButton");
+  const insertSelectedButton = document.getElementById("insertSelectedButton");
+  const insertSelectedCaptionButton = document.getElementById("insertSelectedCaptionButton");
 
-type ParsedControlMeta = {
-  variableName: string;
-  mode: "single" | "table";
-  fitWidth: boolean;
-  withWordBorders: boolean;
-  keepFormattingOnUpdate: boolean;
-  useExcelFormatting: boolean;
-};
+  const previewSizeRange = document.getElementById("previewSizeRange") as HTMLInputElement | null;
+  const previewSizeValue = document.getElementById("previewSizeValue");
+  const insertSizeRange = document.getElementById("insertSizeRange") as HTMLInputElement | null;
+  const insertSizeValue = document.getElementById("insertSizeValue");
 
-type TableOptions = {
-  fitWidth: boolean;
-  withWordBorders: boolean;
-  keepFormattingOnUpdate: boolean;
-  useExcelFormatting: boolean;
-};
+  loadAllMeta();
 
-let loadedVariables: VariableItem[] = [];
-let isHighlightActive = false;
-let currentDateFormat: DateFormatMode = "short";
-let currentExcelFile: File | null = null;
-let tableOptionsByVariable: Record<string, TableOptions> = {};
+  let insertSizeCm = 10;
+  let previewSizePx = DEFAULT_PREVIEW_SIZE_PX;
 
-// ============================================================================
-// BLOCK B - START / OFFICE INITIALISIERUNG
-// STABIL: Verkabelung der Buttons und Grundeinstellungen.
-// ============================================================================
+  let showInfo = false;
+  let showCaptions = false;
+  let dropZoneDragDepth = 0;
 
-Office.onReady(() => {
-  const loadButton = document.getElementById("loadExcelButton") as HTMLButtonElement | null;
-  const updateAllButton = document.getElementById("updateAllButton") as HTMLButtonElement | null;
-  const toggleHighlightButton = document.getElementById("toggleHighlightButton") as HTMLButtonElement | null;
-  const dateFormatSelect = document.getElementById("dateFormatSelect") as HTMLSelectElement | null;
-
-  if (loadButton) {
-    loadButton.onclick = handleExcelLoad;
+  if (previewSizeRange) {
+    previewSizeRange.value = String(DEFAULT_PREVIEW_SIZE_PX);
+    previewSizeRange.addEventListener("input", () => {
+      const nextSize = Math.min(
+        MAX_PREVIEW_SIZE_PX,
+        Math.max(MIN_PREVIEW_SIZE_PX, Number(previewSizeRange.value) || DEFAULT_PREVIEW_SIZE_PX)
+      );
+      previewSizePx = nextSize;
+      previewSizeRange.value = String(nextSize);
+      updatePreviewSize();
+    });
   }
 
-  if (updateAllButton) {
-    updateAllButton.onclick = handleUpdateAll;
+  if (insertSizeRange && insertSizeValue) {
+    insertSizeCm = Math.min(MAX_INSERT_SIZE_CM, Number(insertSizeRange.value));
+    insertSizeValue.textContent = `${insertSizeCm.toFixed(1)} cm`;
+
+    insertSizeRange.addEventListener("input", () => {
+      insertSizeCm = Math.min(MAX_INSERT_SIZE_CM, Number(insertSizeRange.value));
+      insertSizeValue.textContent = `${insertSizeCm.toFixed(1)} cm`;
+    });
   }
 
-  if (toggleHighlightButton) {
-    toggleHighlightButton.onclick = toggleHighlight;
+  if (imageUpload) {
+    imageUpload.accept = IMAGE_FILE_INPUT_ACCEPT;
   }
 
-  if (dateFormatSelect) {
-    currentDateFormat = (dateFormatSelect.value as DateFormatMode) || "short";
-    dateFormatSelect.onchange = async () => {
-      currentDateFormat = (dateFormatSelect.value as DateFormatMode) || "short";
+  if (folderUpload) {
+    folderUpload.accept = IMAGE_FILE_INPUT_ACCEPT;
+  }
 
-      if (currentExcelFile) {
-        await loadExcelFile(currentExcelFile, false);
-        setStatus("Datumsformat geändert und aktuelle Excel-Datei neu geladen.");
-      } else {
-        setStatus("Datumsformat geändert.");
+  function setStatus(message: string) {
+    if (statusElement) {
+      statusElement.textContent = message;
+    }
+  }
+
+  function setDropZoneActive(active: boolean) {
+    dropZone?.classList.toggle("drop-zone-active", active);
+  }
+
+  function resetDropZoneState() {
+    dropZoneDragDepth = 0;
+    setDropZoneActive(false);
+  }
+
+  function hasFileTransfer(dataTransfer: DataTransfer | null): boolean {
+    if (!dataTransfer) {
+      return false;
+    }
+
+    return Array.from(dataTransfer.types || []).includes("Files");
+  }
+
+  function getSupportedFormatLabel(): string {
+    return IMAGE_FILE_INPUT_ACCEPT.replace(/,/g, ", ").toUpperCase();
+  }
+
+  function buildNoValidImageStatus(
+    importResult: Awaited<ReturnType<typeof importImageFiles>>
+  ): string {
+    if (importResult.invalidFileCount === 0) {
+      return "Keine gültigen Bilddateien gefunden.";
+    }
+
+    const invalidPreview = importResult.invalidFileNames.slice(0, 3).join(", ");
+    const invalidSuffix = importResult.invalidFileNames.length > 3 ? ", ..." : "";
+
+    return `Keine Bilder übernommen. Es wurden nur nicht unterstützte Dateien erkannt: ${invalidPreview}${invalidSuffix}. Unterstützt: ${getSupportedFormatLabel()}.`;
+  }
+
+  function buildImportStatus(importResult: Awaited<ReturnType<typeof importImageFiles>>): string {
+    const parts: string[] = [];
+
+    if (importResult.addedCount > 0) {
+      parts.push(`${importResult.addedCount} Bild(er) hinzugefügt.`);
+    } else {
+      parts.push("Keine neuen Bilder hinzugefügt.");
+    }
+
+    if (importResult.skippedCount > 0) {
+      parts.push(`${importResult.skippedCount} Dublette(n) übersprungen.`);
+    }
+
+    if (importResult.invalidFileCount > 0) {
+      const invalidPreview = importResult.invalidFileNames.slice(0, 3).join(", ");
+      const invalidSuffix = importResult.invalidFileNames.length > 3 ? ", ..." : "";
+      parts.push(
+        `${importResult.invalidFileCount} Datei(en) ignoriert: ${invalidPreview}${invalidSuffix}. Unterstützt: ${getSupportedFormatLabel()}.`
+      );
+    }
+
+    if (importResult.failedCount > 0) {
+      const failedPreview = importResult.failedFileNames.slice(0, 3).join(", ");
+      const failedSuffix = importResult.failedFileNames.length > 3 ? ", ..." : "";
+      parts.push(
+        `${importResult.failedCount} Datei(en) konnten nicht gelesen werden: ${failedPreview}${failedSuffix}.`
+      );
+    }
+
+    return parts.join(" ");
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function updatePreviewSize() {
+    document.documentElement.style.setProperty("--preview-size", `${previewSizePx}px`);
+    if (previewSizeValue) {
+      previewSizeValue.textContent = `${previewSizePx} px`;
+    }
+  }
+
+  function resetInputValue(input: HTMLInputElement | null, label: string) {
+    try {
+      if (input) input.value = "";
+    } catch (error) {
+      console.warn(`Konnte ${label} nicht zuruecksetzen:`, error);
+    }
+  }
+
+  function persistImagePositions() {
+    imageItems.forEach((item, index) => {
+      item.position = index + 1;
+      setMeta(item.hash, { position: item.position });
+    });
+  }
+
+  function clearImageList() {
+    try {
+      for (const item of imageItems) {
+        if (item.previewUrl && item.previewUrl.startsWith("blob:")) {
+          try {
+            URL.revokeObjectURL(item.previewUrl);
+          } catch {
+            // Blob-URLs muessen nur bei echten Blob-Quellen freigegeben werden; andere Quellen sind hier unkritisch.
+          }
+        }
       }
-    };
+    } catch {
+      // Ein fehlgeschlagenes Freigeben einzelner Vorschauquellen darf das Leeren der Liste nicht blockieren.
+    }
+
+    imageItems = [];
+
+    resetInputValue(imageUpload, "imageUpload");
+    resetInputValue(folderUpload, "folderUpload");
+
+    renderImageList();
+    setStatus("Bildliste geleert.");
   }
 
-  renderSavedFileInfo();
-  renderHighlightButtonState();
-});
+  function updateVisibilityUI() {
+    if (imageList) {
+      imageList.classList.toggle("hide-info", !showInfo);
+      imageList.classList.toggle("hide-captions", !showCaptions);
+    }
 
-// ============================================================================
-// BLOCK C - EXCEL LADEN UND EINLESEN
-// STABIL: Datei laden, Variablen auslesen, Datumsformat neu laden.
-// HINWEIS: Lokale geänderte Dateien müssen in der Praxis meist neu ausgewählt
-// werden. Wenn aktuell im Input eine Datei gewählt ist, wird diese geladen.
-// ============================================================================
+    if (toggleInfoButton) {
+      toggleInfoButton.textContent = "Bild Infos";
+    }
 
-async function handleExcelLoad(): Promise<void> {
-  const fileInput = document.getElementById("excelFile") as HTMLInputElement | null;
-  if (!fileInput) return;
-
-  const selectedFile = fileInput.files?.[0] ?? null;
-
-  if (!selectedFile) {
-    setStatus("Bitte zuerst eine Excel-Datei auswählen.");
-    return;
+    if (toggleCaptionButton) {
+      toggleCaptionButton.textContent = "Beschriftung";
+    }
   }
 
-  currentExcelFile = selectedFile;
-  await loadExcelFile(selectedFile, true);
-}
+  function getSelectedItems(): ImageItem[] {
+    return [...imageItems]
+      .sort((a, b) => (a.position || 0) - (b.position || 0))
+      .filter((item) => item.selected !== false);
+  }
 
-async function loadExcelFile(file: File, saveMeta: boolean): Promise<void> {
-  const variablesList = document.getElementById("variablesList") as HTMLDivElement | null;
-  if (!variablesList) return;
-
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-
-    const workbook = XLSX.read(arrayBuffer, {
-      type: "array",
-      cellNF: true,
-      cellText: true,
-      cellDates: true,
+  function setAllItemsSelected(selected: boolean) {
+    imageItems.forEach((item) => {
+      item.selected = selected;
+      setMeta(item.hash, { selected });
     });
 
-    const result: VariableItem[] = [];
-    const names = workbook.Workbook?.Names ?? [];
+    renderImageList();
+    setStatus(selected ? "Alle Bilder sind ausgewählt." : "Alle Bilder sind abgewählt.");
+  }
 
-    for (const namedItem of names as any[]) {
-      const variableName = String(namedItem.Name ?? "").trim();
-      const ref = String(namedItem.Ref ?? "").trim();
+  async function insertSpacerParagraph() {
+    await Word.run(async (context) => {
+      const selection = context.document.getSelection();
+      const spacer = selection.insertParagraph("", Word.InsertLocation.after);
+      spacer.getRange(Word.RangeLocation.end).select();
+      await context.sync();
+    });
+  }
 
-      if (!variableName || !ref) {
-        continue;
-      }
+  async function insertSelectedImages(includeCaption: boolean) {
+    const selectedItems = getSelectedItems();
 
-      const resolved = resolveNamedReferenceData(workbook, ref);
-
-      result.push({
-        name: variableName,
-        ref,
-        displayValue: resolved.displayValue,
-        matrix: resolved.matrix,
-        isBlock: resolved.isBlock,
-        usageCount: 0,
-        status: "not-inserted",
-        colWidthsPx: resolved.colWidthsPx,
-      });
-
-      if (resolved.isBlock && !tableOptionsByVariable[variableName]) {
-        tableOptionsByVariable[variableName] = {
-          fitWidth: true,
-          withWordBorders: true,
-          keepFormattingOnUpdate: true,
-          useExcelFormatting: false,
-        };
-      }
-    }
-
-    loadedVariables = result;
-
-    if (saveMeta) {
-      await saveLinkedFileMeta({
-        fileName: file.name,
-        lastLoadedAt: new Date().toLocaleString("de-DE"),
-      });
-    } else {
-      const existingMeta = getSavedFileMeta();
-      if (existingMeta) {
-        await saveLinkedFileMeta({
-          fileName: existingMeta.fileName || file.name,
-          lastLoadedAt: new Date().toLocaleString("de-DE"),
-        });
-      }
-    }
-
-    renderSavedFileInfo();
-
-    if (result.length === 0) {
-      variablesList.innerHTML = "<p>Keine benannten Variablen oder Bereiche gefunden.</p>";
-      setStatus("Es wurden keine benannten Variablen gefunden.");
+    if (selectedItems.length === 0) {
+      setStatus("Keine Bilder ausgewählt.");
       return;
     }
 
-    renderVariables(loadedVariables);
-    await refreshUsageStatus();
-
-    setStatus(`${result.length} Variable(n) aus Excel eingelesen.`);
-  } catch (error) {
-    console.error(error);
-    setStatus("Fehler beim Lesen der Excel-Datei.");
-  }
-}
-
-// ============================================================================
-// BLOCK D - AKTUALISIERUNG WORD-DOKUMENT
-// STABIL: Alle aktualisieren / einzelne Variable aktualisieren / Status.
-// ============================================================================
-
-async function handleUpdateAll(): Promise<void> {
-  if (loadedVariables.length === 0) {
-    setStatus("Bitte zuerst eine Excel-Datei laden.");
-    return;
-  }
-
-  try {
-    let updatedCount = 0;
-
-    await Word.run(async (context) => {
-      const controls = context.document.contentControls;
-      controls.load("items/tag");
-      await context.sync();
-
-      for (const control of controls.items) {
-        const meta = parseControlMeta(control.tag);
-        if (!meta) {
-          continue;
-        }
-
-        const variable = loadedVariables.find((v) => v.name === meta.variableName);
-        if (!variable) {
-          continue;
-        }
-
-        await renderVariableIntoControl(context, control, variable, meta, true);
-        updatedCount++;
+    try {
+      if (typeof (window as any).Word === "undefined") {
+        throw new Error("Word API is not available in this host (Word is undefined)");
       }
 
-      await context.sync();
+      for (const [index, item] of selectedItems.entries()) {
+        await insertSingleImageAtSelection(item, insertSizeCm, { includeCaption });
+
+        if (!includeCaption && index < selectedItems.length - 1) {
+          await insertSpacerParagraph();
+        }
+      }
+
+      setStatus(
+        includeCaption
+          ? `${selectedItems.length} ausgewählte Bilder wurden mit Beschriftung in Word eingefügt.`
+          : `${selectedItems.length} ausgewählte Bilder wurden in Word eingefügt.`
+      );
+    } catch (e: any) {
+      console.error("Fehler beim Einfügen ausgewählter Bilder:", e);
+      console.error("DebugInfo:", e?.debugInfo);
+      setStatus(`Fehler beim Word.run: ${e?.message || "Unbekannter Fehler"}`);
+    }
+  }
+
+  async function appendFiles(files: FileList | File[]) {
+    // Stabiler Kernbereich: Datei-, Ordner- und Drop-Import nutzen denselben Importpfad.
+    const importResult = await importImageFiles(files, imageItems, { getMeta, setMeta });
+
+    if (importResult.imageFileCount === 0) {
+      setStatus(buildNoValidImageStatus(importResult));
+      return;
+    }
+
+    try {
+      imageItems = importResult.items;
+
+      resetInputValue(imageUpload, "imageUpload");
+      resetInputValue(folderUpload, "folderUpload");
+
+      persistImagePositions();
+      renderImageList();
+      setStatus(buildImportStatus(importResult));
+    } catch (error) {
+      console.error(error);
+      setStatus("Fehler beim Laden der Bilder.");
+    }
+  }
+
+  function isInteractiveElement(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    return !!target.closest("button, input, textarea, select, label");
+  }
+
+  function renderImageList() {
+    // UI-Orchestrierung: nur Listenansicht und Bedienung, nicht mit Word-Ausgabe vermischen.
+    if (!imageList) return;
+
+    imageList.classList.toggle("hide-info", !showInfo);
+    imageList.classList.toggle("hide-captions", !showCaptions);
+    imageList.innerHTML = "";
+
+    if (imageItems.length === 0) {
+      const emptyState = document.createElement("div");
+      emptyState.className = "empty-state";
+      emptyState.textContent = "Noch keine Bilder ausgewählt.";
+      imageList.appendChild(emptyState);
+      return;
+    }
+
+    const itemsToRender = [...imageItems].sort((a, b) => (a.position || 0) - (b.position || 0));
+
+    itemsToRender.forEach((item, index) => {
+      const card = document.createElement("div");
+      card.className = "image-card";
+      card.draggable = true;
+      card.setAttribute("data-id", item.id);
+
+      card.addEventListener("dragstart", (ev) => {
+        if (isInteractiveElement(ev.target)) {
+          ev.preventDefault();
+          return;
+        }
+
+        try {
+          (ev.dataTransfer as DataTransfer).setData("text/plain", item.id);
+        } catch {
+          // Ohne Drag-Payload bleibt nur das visuelle Dragging aktiv; die UI bleibt trotzdem benutzbar.
+        }
+        card.classList.add("dragging");
+      });
+
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+        document.querySelectorAll(".image-card.drag-over").forEach((el) => {
+          el.classList.remove("drag-over");
+        });
+      });
+
+      card.addEventListener("dragover", (ev) => {
+        if (hasFileTransfer(ev.dataTransfer)) return;
+        if (isInteractiveElement(ev.target)) return;
+
+        ev.preventDefault();
+        const target = ev.currentTarget as HTMLElement;
+        target.classList.add("drag-over");
+        try {
+          (ev.dataTransfer as DataTransfer).dropEffect = "move";
+        } catch {
+          // Manche Hosts erlauben das Setzen des Drop-Effekts nicht; das Drag-and-drop soll trotzdem weiterlaufen.
+        }
+      });
+
+      card.addEventListener("dragleave", (ev) => {
+        if (hasFileTransfer(ev.dataTransfer)) return;
+        const target = ev.currentTarget as HTMLElement;
+        target.classList.remove("drag-over");
+      });
+
+      card.addEventListener("drop", (ev) => {
+        if (hasFileTransfer(ev.dataTransfer)) return;
+        if (isInteractiveElement(ev.target)) return;
+
+        ev.preventDefault();
+        const target = ev.currentTarget as HTMLElement;
+        target.classList.remove("drag-over");
+
+        let draggingId: string | null = null;
+
+        try {
+          draggingId = (ev.dataTransfer as DataTransfer).getData("text/plain");
+        } catch {
+          // Falls keine Drag-Payload lesbar ist, faellt der Code unten auf das aktive Drag-Element zurueck.
+        }
+
+        if (!draggingId) {
+          const draggingEl = document.querySelector(".image-card.dragging") as HTMLElement | null;
+          if (draggingEl) draggingId = draggingEl.getAttribute("data-id");
+        }
+
+        const targetId = target.getAttribute("data-id");
+
+        if (draggingId && targetId && draggingId !== targetId) {
+          const targetIndex = imageItems.findIndex((i) => i.id === targetId);
+          if (targetIndex >= 0) {
+            moveItemToPosition(draggingId, targetIndex + 1);
+          }
+        }
+      });
+
+      const position = document.createElement("div");
+      position.className = "image-position";
+
+      const numberBadge = document.createElement("div");
+      numberBadge.className = "image-number";
+      numberBadge.textContent = String(index + 1);
+      position.appendChild(numberBadge);
+
+      const controls = document.createElement("div");
+      controls.className = "position-controls";
+
+      const posInputLeft = document.createElement("input");
+      posInputLeft.type = "number";
+      posInputLeft.className = "pos-input";
+      posInputLeft.min = "1";
+      posInputLeft.value = String(item.position || index + 1);
+      posInputLeft.draggable = false;
+      posInputLeft.addEventListener("mousedown", (e) => e.stopPropagation());
+      posInputLeft.addEventListener("click", (e) => e.stopPropagation());
+      posInputLeft.addEventListener("change", () => {
+        const newPos = Math.max(1, Math.floor(Number(posInputLeft.value) || 1));
+        moveItemToPosition(item.id, newPos);
+      });
+
+      controls.appendChild(posInputLeft);
+      position.appendChild(controls);
+
+      const selectionWrap = document.createElement("div");
+      selectionWrap.className = "selection-wrap";
+
+      const selectLabel = document.createElement("label");
+      selectLabel.className = "select-label";
+
+      const selectCheckbox = document.createElement("input");
+      selectCheckbox.type = "checkbox";
+      selectCheckbox.checked = item.selected !== false;
+      selectCheckbox.draggable = false;
+      selectCheckbox.addEventListener("click", (e) => e.stopPropagation());
+      selectCheckbox.addEventListener("change", () => {
+        item.selected = selectCheckbox.checked;
+        setMeta(item.hash, { selected: selectCheckbox.checked });
+      });
+
+      const selectLabelText = document.createElement("span");
+      selectLabelText.textContent = "Ausgewählt";
+
+      selectLabel.appendChild(selectCheckbox);
+      selectLabel.appendChild(selectLabelText);
+      selectionWrap.appendChild(selectLabel);
+      position.appendChild(selectionWrap);
+
+      const previewWrap = document.createElement("div");
+      previewWrap.className = "preview-wrap";
+
+      const preview = document.createElement("img");
+      preview.className = "image-preview";
+      preview.src = item.previewUrl;
+      preview.alt = item.name;
+      preview.draggable = false;
+
+      previewWrap.appendChild(preview);
+
+      const contentContainer = document.createElement("div");
+      contentContainer.className = "image-content";
+
+      const info = document.createElement("div");
+      info.className = "image-info";
+
+      const fileName = document.createElement("div");
+      fileName.className = "file-name";
+      fileName.textContent = item.name;
+
+      const fileMeta = document.createElement("div");
+      fileMeta.className = "file-meta";
+      const fileType = item.name.split(".").pop() || "";
+      fileMeta.textContent = `${formatFileSize(item.size)} · ${fileType}`;
+
+      info.appendChild(fileName);
+      info.appendChild(fileMeta);
+
+      const exifRaw = item.exif?.dateTimeOriginal || "";
+      let exifDate = "";
+      let exifTime = "";
+
+      if (exifRaw) {
+        const parts = exifRaw.split(" ");
+        exifDate = parts[0] ? parts[0].replace(/:/g, "-") : "";
+        exifTime = parts[1] || "";
+      }
+
+      const model = item.exif?.model || "";
+
+      const smallInfo = document.createElement("div");
+      smallInfo.className = "small-info";
+
+      if (exifDate) {
+        const dateLine = document.createElement("div");
+        dateLine.className = "info-line exif-date";
+        dateLine.textContent = exifDate;
+        smallInfo.appendChild(dateLine);
+      }
+
+      if (exifTime) {
+        const timeLine = document.createElement("div");
+        timeLine.className = "info-line exif-time";
+        timeLine.textContent = exifTime;
+        smallInfo.appendChild(timeLine);
+      }
+
+      if (model) {
+        const modelLine = document.createElement("div");
+        modelLine.className = "info-line camera-model";
+        modelLine.textContent = model;
+        smallInfo.appendChild(modelLine);
+      }
+
+      if (smallInfo.children.length > 0) {
+        info.appendChild(smallInfo);
+      }
+
+      const captionContainer = document.createElement("div");
+      captionContainer.className = "image-caption";
+
+      const captionLabel = document.createElement("div");
+      captionLabel.className = "caption-label";
+      captionLabel.textContent = "Beschriftung";
+
+      const captionInput = document.createElement("textarea");
+      captionInput.className = "caption-input";
+      captionInput.rows = 4;
+      captionInput.placeholder = "Kurze Bildbeschriftung eingeben";
+      captionInput.value = item.caption || "";
+      captionInput.draggable = false;
+      captionInput.addEventListener("mousedown", (e) => e.stopPropagation());
+      captionInput.addEventListener("click", (e) => e.stopPropagation());
+
+      captionInput.addEventListener("input", (event) => {
+        const target = event.target as HTMLTextAreaElement;
+        item.caption = target.value;
+
+        setMeta(item.hash, {
+          caption: target.value,
+          position: item.position,
+        });
+      });
+
+      captionContainer.appendChild(captionLabel);
+      captionContainer.appendChild(captionInput);
+
+      const actionsContainer = document.createElement("div");
+      actionsContainer.className = "image-actions-right";
+
+      const insertWithCaptionButton = buildActionButton({
+        action: "insert-single-caption",
+        id: item.id,
+        variant: "primary",
+        iconClass: "insert-button-icon-text",
+        label: "Bild mit Beschriftung einfügen",
+      });
+
+      const insertButton = buildActionButton({
+        action: "insert-single",
+        id: item.id,
+        variant: "quiet",
+        iconClass: "insert-button-icon-image",
+        label: "Bild einfügen",
+      });
+
+      actionsContainer.appendChild(insertWithCaptionButton);
+      actionsContainer.appendChild(insertButton);
+      position.appendChild(actionsContainer);
+
+      card.appendChild(position);
+      card.appendChild(previewWrap);
+      contentContainer.appendChild(info);
+      contentContainer.appendChild(captionContainer);
+      card.appendChild(contentContainer);
+      card.appendChild(actionsContainer);
+
+      imageList.appendChild(card);
     });
+  }
 
-    await refreshUsageStatus();
+  function moveItemToPosition(id: string, targetPos: number) {
+    const idx = imageItems.findIndex((i) => i.id === id);
+    if (idx === -1) return;
 
-    if (isHighlightActive) {
-      await applyHighlightToAllVariables(true);
+    const [item] = imageItems.splice(idx, 1);
+    const insertIndex = Math.max(0, Math.min(targetPos - 1, imageItems.length));
+    imageItems.splice(insertIndex, 0, item);
+
+    persistImagePositions();
+
+    renderImageList();
+  }
+
+  function buildActionButton(options: {
+    action: "insert-single" | "insert-single-caption";
+    id: string;
+    variant: "primary" | "quiet";
+    iconClass: "insert-button-icon-image" | "insert-button-icon-text";
+    label: string;
+  }): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.className = `insert-button icon-action-button ${
+      options.variant === "primary" ? "insert-button-primary" : "insert-button-quiet"
+    }`;
+    button.type = "button";
+    button.setAttribute("data-action", options.action);
+    button.setAttribute("data-id", options.id);
+    button.setAttribute("title", options.label);
+    button.setAttribute("aria-label", options.label);
+    button.draggable = false;
+
+    const content = document.createElement("span");
+    content.className = "insert-button-content";
+
+    const icon = document.createElement("span");
+    icon.className = `insert-button-icon ${options.iconClass}`;
+    content.appendChild(icon);
+    button.appendChild(content);
+
+    return button;
+  }
+
+  imageList?.addEventListener("click", async (event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest("button[data-action]") as HTMLButtonElement | null;
+
+    if (!button) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const id = button.getAttribute("data-id");
+    if (!id) {
+      setStatus("Kein Bild gefunden.");
+      return;
     }
 
-    setStatus(`${updatedCount} Variable(n) im Word-Dokument aktualisiert.`);
-  } catch (error) {
-    console.error(error);
-    setStatus("Fehler beim Aktualisieren der Variablen im Word-Dokument.");
-  }
-}
-
-async function updateSingleVariable(variableName: string): Promise<void> {
-  const variable = loadedVariables.find((v) => v.name === variableName);
-  if (!variable) {
-    return;
-  }
-
-  try {
-    let updatedCount = 0;
-
-    await Word.run(async (context) => {
-      const controls = context.document.contentControls;
-      controls.load("items/tag");
-      await context.sync();
-
-      for (const control of controls.items) {
-        const meta = parseControlMeta(control.tag);
-        if (!meta) {
-          continue;
-        }
-        if (meta.variableName !== variableName) {
-          continue;
-        }
-
-        await renderVariableIntoControl(context, control, variable, meta, true);
-        updatedCount++;
-      }
-
-      await context.sync();
-    });
-
-    await refreshUsageStatus();
-
-    if (isHighlightActive) {
-      await applyHighlightToAllVariables(true);
+    const item = imageItems.find((i) => i.id === id);
+    if (!item) {
+      setStatus("Bild nicht gefunden.");
+      return;
     }
 
-    setStatus(`${updatedCount} Vorkommen von "${variableName}" im Word-Dokument aktualisiert.`);
-  } catch (error) {
-    console.error(error);
-    setStatus(`Fehler beim Aktualisieren von "${variableName}".`);
-  }
-}
+    try {
+      if (typeof (window as any).Word === "undefined") {
+        throw new Error("Word API is not available in this host (Word is undefined)");
+      }
 
-async function refreshUsageStatus(): Promise<void> {
-  if (loadedVariables.length === 0) {
-    renderVariables(loadedVariables);
-    return;
-  }
-
-  try {
-    for (const variable of loadedVariables) {
-      variable.usageCount = 0;
-      variable.status = "not-inserted";
+      // Stabiler Kernbereich: bestehendes Einzelfoto-Einfuegen unveraendert nutzen.
+      const action = button.getAttribute("data-action");
+      const includeCaption = action === "insert-single-caption";
+      await insertSingleImageAtSelection(item, insertSizeCm, { includeCaption });
+      setStatus(
+        includeCaption
+          ? `Bild "${item.name}" wurde mit Beschriftung in Word eingefügt.`
+          : `Bild "${item.name}" wurde in Word eingefügt.`
+      );
+    } catch (e: any) {
+      console.error("Fehler beim Einfügen eines Bildes:", e);
+      setStatus(`Fehler beim Word.run: ${e?.message || "Unbekannter Fehler"}`);
     }
-
-    const variableMap = new Map<string, VariableItem>();
-    loadedVariables.forEach((v) => variableMap.set(v.name, v));
-
-    await Word.run(async (context) => {
-      const controls = context.document.contentControls;
-      controls.load("items/tag,text");
-      await context.sync();
-
-      for (const control of controls.items) {
-        const meta = parseControlMeta(control.tag);
-        if (!meta) {
-          continue;
-        }
-
-        const variable = variableMap.get(meta.variableName);
-        if (!variable) {
-          continue;
-        }
-
-        variable.usageCount += 1;
-
-        const expectedText =
-          meta.mode === "single"
-            ? variable.displayValue
-            : variable.matrix.map((row) => row.join(" ")).join("\n");
-
-        const currentText = control.text ?? "";
-
-        const matches =
-          meta.mode === "single"
-            ? textsEqualForInlineStatus(currentText, expectedText)
-            : textsEqualForBlockStatus(currentText, expectedText);
-
-        if (variable.status !== "outdated") {
-          variable.status = matches ? "up-to-date" : "outdated";
-        }
-      }
-
-      for (const variable of loadedVariables) {
-        if (variable.usageCount === 0) {
-          variable.status = "not-inserted";
-        }
-      }
-
-      await context.sync();
-    });
-
-    renderVariables(loadedVariables);
-  } catch (error) {
-    console.error(error);
-    renderVariables(loadedVariables);
-    setStatus("Variablen geladen, aber Dokumentstatus konnte nicht vollständig geprüft werden.");
-  }
-}
-
-// ============================================================================
-// BLOCK E - HERVORHEBUNG
-// STABIL: Variablen im Dokument hervorheben / Hervorhebung entfernen.
-// ============================================================================
-
-async function toggleHighlight(): Promise<void> {
-  try {
-    isHighlightActive = !isHighlightActive;
-    await applyHighlightToAllVariables(isHighlightActive);
-    renderHighlightButtonState();
-
-    setStatus(
-      isHighlightActive
-        ? "Alle Variablen im Dokument sind hervorgehoben."
-        : "Die Hervorhebung der Variablen wurde entfernt."
-    );
-  } catch (error) {
-    console.error(error);
-    isHighlightActive = !isHighlightActive;
-    renderHighlightButtonState();
-    setStatus("Fehler beim Umschalten der Hervorhebung.");
-  }
-}
-
-async function applyHighlightToAllVariables(enable: boolean): Promise<void> {
-  await Word.run(async (context) => {
-    const controls = context.document.contentControls;
-    controls.load("items/tag");
-    await context.sync();
-
-    for (const control of controls.items) {
-      const meta = parseControlMeta(control.tag);
-      if (!meta) {
-        continue;
-      }
-
-      const range = control.getRange();
-      range.font.highlightColor = enable ? "#FFF59D" : null;
-    }
-
-    await context.sync();
   });
-}
 
-function renderHighlightButtonState(): void {
-  const button = document.getElementById("toggleHighlightButton");
-  const stateInfo = document.getElementById("highlightStateInfo");
+  pickFilesButton?.addEventListener("click", async () => {
+    const nativePicker = (window as any).showOpenFilePicker;
 
-  if (button) {
-    button.textContent = isHighlightActive
-      ? "Hervorhebung ausblenden"
-      : "Variablen hervorheben";
-  }
+    if (typeof nativePicker === "function") {
+      try {
+        const handles = await nativePicker({
+          multiple: true,
+          types: [
+            {
+              description: "Images",
+              accept: {
+                "image/jpeg": [".jpg", ".jpeg"],
+                "image/png": [".png"],
+                "image/webp": [".webp"],
+                "image/tiff": [".tif", ".tiff"],
+                "image/gif": [".gif"],
+                "image/bmp": [".bmp"],
+              },
+            },
+          ],
+        });
 
-  if (stateInfo) {
-    stateInfo.textContent = isHighlightActive
-      ? "Hervorhebung: aktiv"
-      : "Hervorhebung: aus";
-  }
-}
+        const files: File[] = [];
 
-// ============================================================================
-// BLOCK F - UI RENDERING TASKPANE
-// STABIL:
-// - Seitenbreite anpassen: funktioniert
-// - Word-Rahmen erstellen: funktioniert
-// - Formatierung bei Aktualisierung beibehalten: funktioniert
-// Änderungen hier nur für neue Optionen oder UI-Anordnung.
-// ============================================================================
+        for (const handle of handles) {
+          try {
+            const file = await handle.getFile();
+            files.push(file);
+          } catch (err) {
+            console.warn("Fehler beim Lesen einer Datei vom Picker-Handle:", err);
+          }
+        }
 
-function renderVariables(variables: VariableItem[]): void {
-  const variablesList = document.getElementById("variablesList") as HTMLDivElement | null;
-  if (!variablesList) return;
+        if (files.length > 0) {
+          await appendFiles(files);
+        }
 
-  if (variables.length === 0) {
-    variablesList.innerHTML = "Noch keine Variablen geladen.";
-    return;
-  }
-
-  variablesList.innerHTML = variables
-    .map((item, index) => {
-      const statusLabel =
-        item.status === "up-to-date"
-          ? "Aktuell"
-          : item.status === "outdated"
-            ? "Veraltet"
-            : "Neu";
-
-      const statusColor =
-        item.status === "up-to-date"
-          ? "#107c10"
-          : item.status === "outdated"
-            ? "#d83b01"
-            : "#666";
-
-      const preview = item.isBlock
-        ? escapeHtml(item.displayValue).replace(/\n/g, "<br/>")
-        : escapeHtml(item.displayValue);
-
-      const savedOptions = tableOptionsByVariable[item.name] || {
-        fitWidth: true,
-        withWordBorders: true,
-        keepFormattingOnUpdate: true,
-        useExcelFormatting: false,
-      };
-
-      const optionsHtml = item.isBlock
-        ? `
-          <div style="margin-top:10px; display:grid; gap:8px;">
-            <label style="font-size:12px; color:#444;">
-              <input type="checkbox" id="excelfmt-${index}" disabled />
-              Excel-Format (später)
-            </label>
-            <label style="font-size:12px; color:#444;">
-              <input type="checkbox" id="fit-${index}" ${savedOptions.fitWidth ? "checked" : ""} />
-              Seitenbreite anpassen
-            </label>
-            <label style="font-size:12px; color:#444;">
-              <input type="checkbox" id="borders-${index}" ${savedOptions.withWordBorders ? "checked" : ""} />
-              Word-Rahmen erstellen
-            </label>
-            <label style="font-size:12px; color:#444;">
-              <input type="checkbox" id="keepfmt-${index}" ${savedOptions.keepFormattingOnUpdate ? "checked" : ""} />
-              Formatierung bei Aktualisierung beibehalten
-            </label>
-          </div>
-        `
-        : ``;
-
-      return `
-        <div style="margin-bottom:12px; padding:10px; border:1px solid #ccc; border-radius:4px;">
-          <div style="font-size:13px; line-height:1.4;">
-            <strong>${escapeHtml(item.name)}</strong>
-            &nbsp;·&nbsp;Verwendet: ${item.usageCount}
-            &nbsp;·&nbsp;${escapeHtml(item.ref)}
-            &nbsp;·&nbsp;<span style="color:${statusColor}; font-weight:600;">${statusLabel}</span>
-          </div>
-
-          <div style="margin-top:8px; padding:8px; background:#f7f7f7; border-radius:4px; white-space:pre-wrap;">${preview}</div>
-
-          ${optionsHtml}
-
-          <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
-            <button data-index="${index}" class="insertVariableButton ms-Button ms-Button--primary">
-              <span class="ms-Button-label">Einfügen</span>
-            </button>
-
-            <button data-index="${index}" class="updateSingleVariableButton ms-Button">
-              <span class="ms-Button-label">Nur diese aktualisieren</span>
-            </button>
-          </div>
-        </div>
-      `;
-    })
-    .join("");
-
-  const insertButtons = document.querySelectorAll(".insertVariableButton");
-  insertButtons.forEach((button) => {
-    button.addEventListener("click", async (event) => {
-      const target = event.currentTarget as HTMLButtonElement;
-      const index = Number(target.getAttribute("data-index"));
-      const variable = loadedVariables[index];
-      if (!variable) {
         return;
+      } catch (err) {
+        console.warn("showOpenFilePicker nicht verfügbar oder abgebrochen:", err);
       }
-
-      const meta = getMetaFromUi(index, variable);
-      await insertVariable(variable, meta);
-    });
-  });
-
-  const updateButtons = document.querySelectorAll(".updateSingleVariableButton");
-  updateButtons.forEach((button) => {
-    button.addEventListener("click", async (event) => {
-      const target = event.currentTarget as HTMLButtonElement;
-      const index = Number(target.getAttribute("data-index"));
-      const variable = loadedVariables[index];
-      if (!variable) {
-        return;
-      }
-
-      const meta = getMetaFromUi(index, variable);
-      tableOptionsByVariable[variable.name] = {
-        fitWidth: meta.fitWidth,
-        withWordBorders: meta.withWordBorders,
-        keepFormattingOnUpdate: meta.keepFormattingOnUpdate,
-        useExcelFormatting: meta.useExcelFormatting,
-      };
-
-      await updateSingleVariable(variable.name);
-    });
-  });
-}
-
-// ============================================================================
-// BLOCK G - OPTIONSAUSWAHL PRO VARIABLE
-// STABIL:
-// - Seitenbreite anpassen
-// - Word-Rahmen erstellen
-// - Formatierung bei Aktualisierung beibehalten
-// Diese Logik aktuell nicht ohne Grund ändern.
-// ============================================================================
-
-function getMetaFromUi(index: number, variable: VariableItem): ParsedControlMeta {
-  if (!variable.isBlock) {
-    return {
-      variableName: variable.name,
-      mode: "single",
-      fitWidth: false,
-      withWordBorders: false,
-      keepFormattingOnUpdate: true,
-      useExcelFormatting: false,
-    };
-  }
-
-  const fitCheckbox = document.getElementById(`fit-${index}`) as HTMLInputElement | null;
-  const bordersCheckbox = document.getElementById(`borders-${index}`) as HTMLInputElement | null;
-  const keepFmtCheckbox = document.getElementById(`keepfmt-${index}`) as HTMLInputElement | null;
-
-  const meta: ParsedControlMeta = {
-    variableName: variable.name,
-    mode: "table",
-    fitWidth: !!fitCheckbox?.checked,
-    withWordBorders: !!bordersCheckbox?.checked,
-    keepFormattingOnUpdate: !!keepFmtCheckbox?.checked,
-    useExcelFormatting: false,
-  };
-
-  tableOptionsByVariable[variable.name] = {
-    fitWidth: meta.fitWidth,
-    withWordBorders: meta.withWordBorders,
-    keepFormattingOnUpdate: meta.keepFormattingOnUpdate,
-    useExcelFormatting: false,
-  };
-
-  return meta;
-}
-
-// ============================================================================
-// BLOCK H - EINFÜGEN UND CURSORVERHALTEN
-// STABIL:
-// - Einzelwert einfügen
-// - Cursor hinter Feld setzen
-// - Leerzeichenlogik funktioniert
-// Änderungen nur bei echtem Bedarf.
-// ============================================================================
-
-async function insertVariable(variable: VariableItem, meta: ParsedControlMeta): Promise<void> {
-  try {
-    await Word.run(async (context) => {
-      const selection = context.document.getSelection();
-      selection.load("text");
-      await context.sync();
-
-      const control = selection.insertContentControl();
-      control.tag = buildTag(meta);
-      control.title = `Excel-Variable: ${variable.name}`;
-      control.appearance = "BoundingBox";
-      control.cannotDelete = false;
-      control.cannotEdit = false;
-      control.placeholderText = "";
-
-      await renderVariableIntoControl(context, control, variable, meta, false);
-
-      if (meta.mode === "single") {
-        await moveCursorOutsideSingleControl(context, control);
-      } else {
-        const cursorRange = control.getRange("After");
-        cursorRange.select();
-      }
-
-      await context.sync();
-    });
-
-    await refreshUsageStatus();
-
-    if (isHighlightActive) {
-      await applyHighlightToAllVariables(true);
     }
 
-    setStatus(`Variable "${variable.name}" wurde in das Word-Dokument eingefügt.`);
-  } catch (error) {
-    console.error(error);
-    setStatus(`Fehler beim Einfügen der Variable "${variable.name}".`);
-  }
-}
+    imageUpload?.click();
+  });
 
-async function moveCursorOutsideSingleControl(
-  context: Word.RequestContext,
-  control: Word.ContentControl
-): Promise<void> {
-  const afterRange = control.getRange("After");
-  afterRange.load("text");
-  await context.sync();
+  pickFolderButton?.addEventListener("click", async () => {
+    const nativeDirPicker = (window as any).showDirectoryPicker;
 
-  const nextText = afterRange.text ?? "";
+    if (typeof nativeDirPicker === "function") {
+      try {
+        const dirHandle = await nativeDirPicker();
+        const files: File[] = [];
 
-  if (nextText.length === 0) {
-    afterRange.insertText(" ", Word.InsertLocation.start);
-    await context.sync();
-  } else {
-    const firstChar = nextText.charAt(0);
-    if (!/\s/.test(firstChar) && !/^[,.;:!?)}\]»]/.test(firstChar)) {
-      afterRange.insertText(" ", Word.InsertLocation.start);
-      await context.sync();
-    }
-  }
-
-  const finalAfter = control.getRange("After");
-  finalAfter.select();
-}
-
-// ============================================================================
-// BLOCK I - WORD-AUSGABE / TABELLENRENDERING
-// STABIL:
-// - Tabellen in Word einfügen
-// - Seitenbreite anpassen
-// - Word-Rahmen erstellen
-// - Formatierung bei Aktualisierung beibehalten
-// Diesen Block nur ändern, wenn sich Tabellenlogik ändern soll.
-// ============================================================================
-
-async function renderVariableIntoControl(
-  context: Word.RequestContext,
-  control: Word.ContentControl,
-  variable: VariableItem,
-  meta: ParsedControlMeta,
-  isUpdate: boolean
-): Promise<void> {
-  if (meta.mode === "table" && variable.isBlock) {
-    if (isUpdate && meta.keepFormattingOnUpdate) {
-      const range = control.getRange();
-      const tables = range.tables;
-      tables.load("items");
-      await context.sync();
-
-      if (tables.items.length > 0) {
-        const table = tables.items[0];
-
-        for (let r = 0; r < variable.matrix.length; r++) {
-          for (let c = 0; c < variable.matrix[r].length; c++) {
-            try {
-              const cell = table.getCell(r, c);
-              cell.body.insertText(variable.matrix[r][c], Word.InsertLocation.replace);
-            } catch {
-              control.clear();
-              const htmlFallback = buildHtmlTable(
-                variable.matrix,
-                variable.colWidthsPx,
-                meta.fitWidth,
-                meta.withWordBorders
-              );
-              control.insertHtml(htmlFallback, Word.InsertLocation.replace);
-              return;
+        async function traverseDirectory(handle: any) {
+          for await (const entry of handle.values()) {
+            if (entry.kind === "file") {
+              try {
+                const file: File = await entry.getFile();
+                files.push(file);
+              } catch (err) {
+                console.warn("Fehler beim Lesen einer Datei aus dem Ordner-Handle:", err);
+              }
+            } else if (entry.kind === "directory") {
+              await traverseDirectory(entry);
             }
           }
         }
+
+        await traverseDirectory(dirHandle);
+
+        if (files.length > 0) {
+          await appendFiles(files);
+        }
+
         return;
+      } catch (err) {
+        console.warn("showDirectoryPicker nicht verfügbar oder abgebrochen:", err);
       }
     }
 
-    control.clear();
-    const html = buildHtmlTable(
-      variable.matrix,
-      variable.colWidthsPx,
-      meta.fitWidth,
-      meta.withWordBorders
-    );
-    control.insertHtml(html, Word.InsertLocation.replace);
-    return;
-  }
-
-  control.insertText(variable.displayValue, Word.InsertLocation.replace);
-}
-
-// ============================================================================
-// BLOCK J - HTML-TABELLE UND SPALTENBREITEN
-// AKTIV IN ARBEIT:
-// - Excel-Spaltenbreiten priorisieren
-// - Tabellenbreite innerhalb Word sinnvoll steuern
-// Dies ist künftig der Hauptblock für Tabellenlayout.
-// ============================================================================
-
-function buildHtmlTable(
-  matrix: string[][],
-  rawColWidthsPx: number[],
-  fitWidth: boolean,
-  withWordBorders: boolean
-): string {
-  const colCount = matrix[0]?.length ?? 0;
-  const effectiveWidths = buildEffectiveColumnWidths(matrix, rawColWidthsPx, colCount, fitWidth);
-
-  const colGroup = effectiveWidths.length
-    ? `<colgroup>${effectiveWidths
-        .map((w) => {
-          if (fitWidth) {
-            return `<col style="width:${w}%;">`;
-          }
-          return `<col style="width:${w}px;">`;
-        })
-        .join("")}</colgroup>`
-    : "";
-
-  const borderStyle = withWordBorders ? "1px solid #666" : "none";
-
-  const rowsHtml = matrix
-    .map((row) => {
-      const cellsHtml = row
-        .map((cell) => {
-          return `<td style="border:${borderStyle};padding:6px 8px;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere;">${escapeHtml(
-            cell
-          )}</td>`;
-        })
-        .join("");
-      return `<tr>${cellsHtml}</tr>`;
-    })
-    .join("");
-
-  const tableStyle = fitWidth
-    ? "border-collapse:collapse;width:100%;table-layout:fixed;"
-    : `border-collapse:collapse;width:${Math.round(
-        effectiveWidths.reduce((sum, w) => sum + w, 0)
-      )}px;max-width:100%;table-layout:fixed;`;
-
-  return `<table style="${tableStyle}">${colGroup}${rowsHtml}</table>`;
-}
-
-function buildEffectiveColumnWidths(
-  matrix: string[][],
-  rawColWidthsPx: number[],
-  colCount: number,
-  fitWidth: boolean
-): number[] {
-  if (!colCount) {
-    return [];
-  }
-
-  const hasExcelWidths =
-    rawColWidthsPx.length === colCount &&
-    rawColWidthsPx.some((w) => typeof w === "number" && w > 0);
-
-  let widthsPx: number[];
-
-  if (hasExcelWidths) {
-    widthsPx = rawColWidthsPx.map((w) => clampWidthPx(w));
-  } else {
-    widthsPx = new Array(colCount).fill(0).map((_, c) => {
-      let maxLen = 6;
-      for (let r = 0; r < matrix.length; r++) {
-        const value = matrix[r]?.[c] ?? "";
-        maxLen = Math.max(maxLen, String(value).length);
-      }
-      return clampWidthPx(maxLen * 7 + 24);
-    });
-  }
-
-  if (fitWidth) {
-    const total = widthsPx.reduce((sum, w) => sum + w, 0) || 1;
-    return widthsPx.map((w) => Number(((w / total) * 100).toFixed(4)));
-  }
-
-  return widthsPx;
-}
-
-function clampWidthPx(value: number): number {
-  return Math.max(50, Math.min(420, Math.round(value || 120)));
-}
-
-// ============================================================================
-// BLOCK K - TAGS / METADATEN DER VARIABLEN
-// STABIL: Tag-Struktur für gespeicherte Optionen.
-// Nicht leichtfertig ändern.
-// ============================================================================
-
-function parseControlMeta(tag: string | undefined): ParsedControlMeta | null {
-  if (!tag) return null;
-  if (!tag.startsWith("excelvar|")) return null;
-
-  const parts = tag.split("|");
-  if (parts.length < 7) return null;
-
-  return {
-    variableName: decodeSafe(parts[1]),
-    mode: decodeSafe(parts[2]) === "table" ? "table" : "single",
-    fitWidth: decodeSafe(parts[3]) === "1",
-    withWordBorders: decodeSafe(parts[4]) === "1",
-    keepFormattingOnUpdate: decodeSafe(parts[5]) === "1",
-    useExcelFormatting: decodeSafe(parts[6]) === "1",
-  };
-}
-
-function buildTag(meta: ParsedControlMeta): string {
-  return [
-    "excelvar",
-    encodeURIComponent(meta.variableName),
-    encodeURIComponent(meta.mode),
-    encodeURIComponent(meta.fitWidth ? "1" : "0"),
-    encodeURIComponent(meta.withWordBorders ? "1" : "0"),
-    encodeURIComponent(meta.keepFormattingOnUpdate ? "1" : "0"),
-    encodeURIComponent(meta.useExcelFormatting ? "1" : "0"),
-  ].join("|");
-}
-
-function decodeSafe(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-// ============================================================================
-// BLOCK L - TEXTVERGLEICH / STATUSPRÜFUNG
-// STABIL: Vergleich für Einzelwerte und Tabellenstatus.
-// ============================================================================
-
-function textsEqualForInlineStatus(currentText: string, expectedText: string): boolean {
-  return normalizeInlineText(currentText) === normalizeInlineText(expectedText);
-}
-
-function textsEqualForBlockStatus(currentText: string, expectedText: string): boolean {
-  return normalizeBlockText(currentText) === normalizeBlockText(expectedText);
-}
-
-function normalizeInlineText(value: string): string {
-  return value.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function normalizeBlockText(value: string): string {
-  return value
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/\u00A0/g, " ")
-    .replace(/\t/g, " ")
-    .split("\n")
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length > 0)
-    .join("\n");
-}
-
-// ============================================================================
-// BLOCK M - EXCEL-BEREICHE AUFLÖSEN
-// STABIL: Benannte Bereiche, Zellwerte, Spaltenbreiten.
-// ============================================================================
-
-function resolveNamedReferenceData(
-  workbook: XLSX.WorkBook,
-  ref: string
-): {
-  displayValue: string;
-  matrix: string[][];
-  isBlock: boolean;
-  colWidthsPx: number[];
-} {
-  const cleanedRef = ref.replace(/^=/, "");
-  const match = cleanedRef.match(/^(?:'([^']+)'|([^!]+))!(.+)$/);
-
-  if (!match) {
-    return {
-      displayValue: ref,
-      matrix: [[ref]],
-      isBlock: false,
-      colWidthsPx: [],
-    };
-  }
-
-  const sheetName = (match[1] || match[2] || "").trim();
-  const rangeAddress = match[3];
-  const worksheet = workbook.Sheets[sheetName] as XLSX.WorkSheet & {
-    ["!cols"]?: Array<{ wpx?: number; wch?: number; width?: number }>;
-  };
-
-  if (!worksheet) {
-    return {
-      displayValue: ref,
-      matrix: [[ref]],
-      isBlock: false,
-      colWidthsPx: [],
-    };
-  }
-
-  try {
-    const range = XLSX.utils.decode_range(rangeAddress);
-    const matrix: string[][] = [];
-
-    for (let r = range.s.r; r <= range.e.r; r++) {
-      const row: string[] = [];
-      for (let c = range.s.c; c <= range.e.c; c++) {
-        const cellAddress = XLSX.utils.encode_cell({ r, c });
-        const cell = worksheet[cellAddress];
-        row.push(getCellDisplayValue(cell));
-      }
-      matrix.push(row);
-    }
-
-    const colWidthsPx: number[] = [];
-    const colsMeta = worksheet["!cols"] || [];
-    for (let c = range.s.c; c <= range.e.c; c++) {
-      const colMeta = colsMeta[c];
-      colWidthsPx.push(getColumnWidthPx(colMeta));
-    }
-
-    const isBlock = matrix.length > 1 || (matrix[0] && matrix[0].length > 1);
-    const displayValue = isBlock
-      ? matrix.map((row) => row.join(" | ")).join("\n")
-      : (matrix[0]?.[0] ?? "");
-
-    return { displayValue, matrix, isBlock, colWidthsPx };
-  } catch {
-    return {
-      displayValue: ref,
-      matrix: [[ref]],
-      isBlock: false,
-      colWidthsPx: [],
-    };
-  }
-}
-
-function getColumnWidthPx(colMeta: { wpx?: number; wch?: number; width?: number } | undefined): number {
-  if (!colMeta) return 120;
-  if (typeof colMeta.wpx === "number") return colMeta.wpx;
-  if (typeof colMeta.wch === "number") return Math.max(50, Math.round(colMeta.wch * 7 + 12));
-  if (typeof colMeta.width === "number") return Math.max(50, Math.round(colMeta.width * 7));
-  return 120;
-}
-
-// ============================================================================
-// BLOCK N - DATENFORMATIERUNG AUS EXCEL
-// STABIL:
-// - Datum kurz/lang
-// - Prozentdarstellung
-// - Zellwertanzeige
-// ============================================================================
-
-function getCellDisplayValue(cell: XLSX.CellObject | undefined): string {
-  if (!cell) return "";
-
-  const anyCell = cell as any;
-
-  if (anyCell.t === "d" && anyCell.v instanceof Date) {
-    return formatGermanDate(anyCell.v);
-  }
-
-  if (typeof anyCell.v === "number" && typeof anyCell.z === "string") {
-    const formatString = anyCell.z.toLowerCase();
-
-    if (formatString.includes("%")) {
-      return new Intl.NumberFormat("de-DE", {
-        style: "percent",
-        minimumFractionDigits: guessFractionDigitsFromFormat(formatString),
-        maximumFractionDigits: guessFractionDigitsFromFormat(formatString),
-      }).format(anyCell.v);
-    }
-
-    if (looksLikeDateFormat(formatString)) {
-      const parsedDate = XLSX.SSF.parse_date_code(anyCell.v);
-      if (parsedDate) {
-        const jsDate = new Date(parsedDate.y, parsedDate.m - 1, parsedDate.d);
-        return formatGermanDate(jsDate);
-      }
-    }
-  }
-
-  if (typeof anyCell.w === "string" && anyCell.w.length > 0) {
-    const maybeDate = tryNormalizeExcelDateToGerman(anyCell.w);
-    if (maybeDate) return maybeDate;
-
-    const maybePercent = tryNormalizePercentToGerman(anyCell.w);
-    if (maybePercent) return maybePercent;
-
-    return String(anyCell.w);
-  }
-
-  if (anyCell.v === undefined || anyCell.v === null) return "";
-  return String(anyCell.v);
-}
-
-function looksLikeDateFormat(formatString: string): boolean {
-  return /[dmy]/i.test(formatString);
-}
-
-function guessFractionDigitsFromFormat(formatString: string): number {
-  const match = formatString.match(/0\.([0#]+)/);
-  return match ? match[1].length : 0;
-}
-
-function formatGermanDate(date: Date): string {
-  if (currentDateFormat === "long") {
-    const day = String(date.getDate()).padStart(2, "0");
-    const monthName = new Intl.DateTimeFormat("de-DE", { month: "long" }).format(date);
-    const year = String(date.getFullYear());
-    return `${day}. ${monthName} ${year}`;
-  }
-
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = String(date.getFullYear());
-  return `${day}.${month}.${year}`;
-}
-
-function tryNormalizeExcelDateToGerman(value: string): string | null {
-  const trimmed = value.trim();
-
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (isoMatch) {
-    const year = Number(isoMatch[1]);
-    const month = Number(isoMatch[2]) - 1;
-    const day = Number(isoMatch[3]);
-    return formatGermanDate(new Date(year, month, day));
-  }
-
-  const usMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (usMatch) {
-    const month = Number(usMatch[1]) - 1;
-    const day = Number(usMatch[2]);
-    const year = Number(usMatch[3]);
-    return formatGermanDate(new Date(year, month, day));
-  }
-
-  const deMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
-  if (deMatch) {
-    const day = Number(deMatch[1]);
-    const month = Number(deMatch[2]) - 1;
-    let year = Number(deMatch[3]);
-    if (year < 100) year += 2000;
-    return formatGermanDate(new Date(year, month, day));
-  }
-
-  return null;
-}
-
-function tryNormalizePercentToGerman(value: string): string | null {
-  const trimmed = value.trim();
-  const match = trimmed.match(/^(-?\d+(?:[.,]\d+)?)\s?%$/);
-  if (!match) return null;
-
-  const num = Number(match[1].replace(",", "."));
-  if (Number.isNaN(num)) return null;
-
-  return `${num.toLocaleString("de-DE")} %`;
-}
-
-// ============================================================================
-// BLOCK O - DOKUMENTEINSTELLUNGEN UND HILFSFUNKTIONEN
-// STABIL: Gemerkte Excel-Datei, Statusanzeige, HTML-Escaping.
-// ============================================================================
-
-async function saveLinkedFileMeta(meta: SavedFileMeta): Promise<void> {
-  Office.context.document.settings.set("excelWordLinkedFileMeta", meta);
-
-  await new Promise<void>((resolve, reject) => {
-    Office.context.document.settings.saveAsync((result) => {
-      if (result.status === Office.AsyncResultStatus.Succeeded) {
-        resolve();
-      } else {
-        reject(result.error);
-      }
-    });
+    folderUpload?.click();
   });
+
+  dropZone?.addEventListener("dragenter", (event) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    dropZoneDragDepth += 1;
+    setDropZoneActive(true);
+  });
+
+  dropZone?.addEventListener("dragover", (event) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "copy";
+    }
+    setDropZoneActive(true);
+  });
+
+  dropZone?.addEventListener("dragleave", (event) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    dropZoneDragDepth = Math.max(0, dropZoneDragDepth - 1);
+
+    if (dropZoneDragDepth === 0) {
+      setDropZoneActive(false);
+    }
+  });
+
+  dropZone?.addEventListener("drop", async (event) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    resetDropZoneState();
+
+    const droppedFiles = Array.from(event.dataTransfer?.files || []);
+    if (droppedFiles.length === 0) {
+      setStatus("Keine Dateien im Drop erkannt.");
+      return;
+    }
+
+    await appendFiles(droppedFiles);
+  });
+
+  document.addEventListener("dragover", (event) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+  });
+
+  document.addEventListener("drop", (event) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+  });
+
+  imageUpload?.addEventListener("change", async () => {
+    if (!imageUpload.files || imageUpload.files.length === 0) {
+      setStatus("Keine Dateien ausgewählt.");
+      return;
+    }
+
+    await appendFiles(imageUpload.files);
+  });
+
+  folderUpload?.addEventListener("change", async () => {
+    if (!folderUpload.files || folderUpload.files.length === 0) {
+      setStatus("Kein Ordner ausgewählt.");
+      return;
+    }
+
+    await appendFiles(Array.from(folderUpload.files));
+  });
+
+  clearImagesButton?.addEventListener("click", () => {
+    clearImageList();
+  });
+
+  selectAllButton?.addEventListener("click", () => {
+    setAllItemsSelected(true);
+  });
+
+  selectNoneButton?.addEventListener("click", () => {
+    setAllItemsSelected(false);
+  });
+
+  insertSelectedButton?.addEventListener("click", async () => {
+    await insertSelectedImages(false);
+  });
+
+  insertSelectedCaptionButton?.addEventListener("click", async () => {
+    await insertSelectedImages(true);
+  });
+
+  toggleInfoButton?.addEventListener("click", () => {
+    showInfo = !showInfo;
+    updateVisibilityUI();
+  });
+
+  toggleCaptionButton?.addEventListener("click", () => {
+    showCaptions = !showCaptions;
+    updateVisibilityUI();
+  });
+
+  updatePreviewSize();
+  updateVisibilityUI();
+  resetDropZoneState();
+  persistImagePositions();
+  renderImageList();
+  setStatus("Bereit.");
 }
 
-function getSavedFileMeta(): SavedFileMeta | undefined {
-  return Office.context.document.settings.get("excelWordLinkedFileMeta") as SavedFileMeta | undefined;
-}
-
-function renderSavedFileInfo(): void {
-  const linkedFileInfo = document.getElementById("linkedFileInfo");
-  if (!linkedFileInfo) return;
-
-  const meta = getSavedFileMeta();
-
-  if (!meta) {
-    linkedFileInfo.innerHTML = "Noch keine Excel-Datei ausgewählt.";
-    return;
+if (
+  typeof (window as any).Office !== "undefined" &&
+  typeof (window as any).Office.onReady === "function"
+) {
+  (window as any).Office.onReady(initTaskpane);
+} else {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initTaskpane);
+  } else {
+    initTaskpane();
   }
-
-  const currentFileInfo = currentExcelFile
-    ? `<br/><strong>Aktuell ausgewählt:</strong> ${escapeHtml(currentExcelFile.name)}`
-    : "";
-
-  linkedFileInfo.innerHTML =
-    `<strong>Zugeordnete Excel-Datei:</strong> ${escapeHtml(meta.fileName)}<br/>` +
-    `<strong>Zuletzt geladen:</strong> ${escapeHtml(meta.lastLoadedAt)}` +
-    currentFileInfo;
-}
-
-function setStatus(message: string): void {
-  const status = document.getElementById("statusMessage");
-  if (status) {
-    status.textContent = message;
-  }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }
