@@ -11,8 +11,8 @@
   <ProviderName>WERKHAUS</ProviderName>
   <DefaultLocale>de-DE</DefaultLocale>
 
-  <DisplayName DefaultValue="Werkhaus Word & Bild"/>
-  <Description DefaultValue="Werkhaus Word & Bild zum Einfügen, Beschriften und Verwalten von Bildern in Word-Dokumenten inklusive Bilddokumentation und Abbildungsverzeichnis."/>
+  <DisplayName DefaultValue="WERKHAUS Word &amp; Bild"/>
+  <Description DefaultValue="WERKHAUS Word &amp; Bild zum Einfügen, Beschriften und Verwalten von Bildern in Word-Dokumenten inklusive Bilddokumentation und Abbildungsverzeichnis."/>
 
   <IconUrl DefaultValue="https://YOUR-AZURE-HOSTNAME.azurestaticapps.net/assets/werkhaus-32.png?v=2"/>
   <HighResolutionIconUrl DefaultValue="https://YOUR-AZURE-HOSTNAME.azurestaticapps.net/assets/werkhaus-64.png?v=2"/>
@@ -100,14 +100,14 @@
       </bt:Urls>
 
       <bt:ShortStrings>
-        <bt:String id="GetStarted.Title" DefaultValue="Werkhaus Word & Bild"/>
-        <bt:String id="CommandsGroup.Label" DefaultValue="Werkhaus Word & Bild"/>
-        <bt:String id="TaskpaneButton.Label" DefaultValue="Werkhaus Word & Bild"/>
+        <bt:String id="GetStarted.Title" DefaultValue="WERKHAUS Word &amp; Bild"/>
+        <bt:String id="CommandsGroup.Label" DefaultValue="WERKHAUS Word &amp; Bild"/>
+        <bt:String id="TaskpaneButton.Label" DefaultValue="WERKHAUS Word &amp; Bild"/>
       </bt:ShortStrings>
 
       <bt:LongStrings>
-        <bt:String id="GetStarted.Description" DefaultValue="Das Werkhaus Word & Bild wurde geladen. Öffnen Sie es über das Menüband in Word."/>
-        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Öffnet das Werkhaus Word & Bild zum Einfügen, Beschriften und Verwalten von Bildern in Word."/>
+        <bt:String id="GetStarted.Description" DefaultValue="Das WERKHAUS Word &amp; Bild wurde geladen. Öffnen Sie es über das Menüband in Word."/>
+        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Öffnet das WERKHAUS Word &amp; Bild zum Einfügen, Beschriften und Verwalten von Bildern in Word."/>
       </bt:LongStrings>
     </Resources>
 
