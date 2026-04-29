@@ -1,12 +1,14 @@
 import { USABLE_PAGE_HEIGHT_CM, USABLE_PAGE_WIDTH_CM, WORD_PT_PER_INCH } from "./constants";
-import { getResolvedCaptionText, shouldInsertCaption } from "./captions";
-import type { ImageItem } from "./types";
+import { getCaptionTextByMode, shouldInsertCaption } from "./captions";
+import type { CaptionMode, ImageItem } from "./types";
 
 const CM_TO_POINTS = WORD_PT_PER_INCH / 2.54;
 const SPACER_SPACE_AFTER_POINTS = 10;
+const CAPTION_SPACE_AFTER_POINTS = 14;
 
 interface InsertSingleImageOptions {
   includeCaption?: boolean;
+  captionMode?: CaptionMode;
 }
 
 // Stabiler Kernbereich:
@@ -24,10 +26,13 @@ export async function insertSingleImageAtSelection(
 
   await Word.run(async (context) => {
     const selection = context.document.getSelection();
+    const captionMode: CaptionMode = options.captionMode ?? "full";
     const shouldIncludeCaption =
-      typeof options.includeCaption === "boolean"
-        ? options.includeCaption
-        : shouldInsertCaption(item);
+      captionMode === "plainImage"
+        ? false
+        : typeof options.includeCaption === "boolean"
+          ? options.includeCaption
+          : shouldInsertCaption(item);
 
     const pic = selection.insertInlinePictureFromBase64(base64, Word.InsertLocation.replace);
 
@@ -51,7 +56,7 @@ export async function insertSingleImageAtSelection(
 
     let continuationRange: Word.Range;
     if (shouldIncludeCaption) {
-      const captionText = getResolvedCaptionText(item, figureNumber);
+      const captionText = getCaptionTextByMode(item, figureNumber, captionMode);
       continuationRange = insertCaptionAfterPicture(pic, captionText);
     } else {
       const pictureEndRange = pic.getRange(Word.RangeLocation.end);
@@ -119,12 +124,16 @@ function insertCaptionAfterPicture(picture: Word.InlinePicture, captionText: str
   captionParagraph.leftIndent = 0;
   captionParagraph.rightIndent = remainingWidth;
   captionParagraph.spaceBefore = 0;
-  captionParagraph.spaceAfter = 0;
+  // Abstand direkt am Beschriftungsabsatz: der Folgeabsatz startet mit diesem Abstand.
+  captionParagraph.spaceAfter = CAPTION_SPACE_AFTER_POINTS;
   setParagraphKeepTogether(captionParagraph, true);
   setParagraphKeepWithNext(captionParagraph, true);
 
   const spacerParagraph = captionParagraph.insertParagraph("", Word.InsertLocation.after);
-  configureSpacerParagraph(spacerParagraph);
+  // Kein zusaetzlicher Leerzeilen-Abstand hinter der Caption.
+  spacerParagraph.spaceBefore = 0;
+  spacerParagraph.spaceAfter = 0;
+  setParagraphKeepWithNext(spacerParagraph, false);
 
   return spacerParagraph.getRange(Word.RangeLocation.end);
 }

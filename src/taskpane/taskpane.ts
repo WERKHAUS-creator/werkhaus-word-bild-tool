@@ -1,4 +1,4 @@
-import type { ImageItem } from "./types";
+import type { CaptionMode, ImageItem } from "./types";
 import { IMAGE_FILE_INPUT_ACCEPT, importImageFiles } from "./importImages";
 import { createTaskpanePersistence } from "./persistence";
 import { insertSingleImageAtSelection } from "./wordInsert";
@@ -7,8 +7,8 @@ import { insertSingleImageAtSelection } from "./wordInsert";
 // Bildimport, Bildauswahl und Einzelfoto-Einfuegen bleiben hier bewusst getrennt.
 // Nur bei nachgewiesenem Fehler an diesen Pfaden aendern.
 let imageItems: ImageItem[] = [];
-const DEFAULT_PREVIEW_SIZE_PX = 100;
-const MIN_PREVIEW_SIZE_PX = 100;
+const DEFAULT_PREVIEW_SIZE_PX = 120;
+const MIN_PREVIEW_SIZE_PX = 120;
 const MAX_PREVIEW_SIZE_PX = 500;
 const MAX_INSERT_SIZE_CM = 16;
 
@@ -30,6 +30,7 @@ function initTaskpane() {
   const selectNoneButton = document.getElementById("selectNoneButton");
   const insertSelectedButton = document.getElementById("insertSelectedButton");
   const insertSelectedCaptionButton = document.getElementById("insertSelectedCaptionButton");
+  const insertSelectedPlainButton = document.getElementById("insertSelectedPlainButton");
 
   const previewSizeRange = document.getElementById("previewSizeRange") as HTMLInputElement | null;
   const previewSizeValue = document.getElementById("previewSizeValue");
@@ -240,7 +241,7 @@ function initTaskpane() {
     });
   }
 
-  async function insertSelectedImages(includeCaption: boolean) {
+  async function insertSelectedImages(captionMode: CaptionMode) {
     const selectedItems = getSelectedItems();
 
     if (selectedItems.length === 0) {
@@ -254,17 +255,22 @@ function initTaskpane() {
       }
 
       for (const [index, item] of selectedItems.entries()) {
-        await insertSingleImageAtSelection(item, insertSizeCm, { includeCaption });
+        await insertSingleImageAtSelection(item, insertSizeCm, {
+          includeCaption: true,
+          captionMode,
+        });
 
-        if (!includeCaption && index < selectedItems.length - 1) {
+        if (captionMode === "numberOnly" && index < selectedItems.length - 1) {
           await insertSpacerParagraph();
         }
       }
 
       setStatus(
-        includeCaption
+        captionMode === "full"
           ? `${selectedItems.length} ausgewählte Bilder wurden mit Beschriftung in Word eingefügt.`
-          : `${selectedItems.length} ausgewählte Bilder wurden in Word eingefügt.`
+          : captionMode === "numberOnly"
+            ? `${selectedItems.length} ausgewählte Bilder wurden nur mit Nummerierung in Word eingefügt.`
+            : `${selectedItems.length} ausgewählte Bilder wurden ohne Beschriftung in Word eingefügt.`
       );
     } catch (e: any) {
       console.error("Fehler beim Einfügen ausgewählter Bilder:", e);
@@ -563,11 +569,19 @@ function initTaskpane() {
         id: item.id,
         variant: "quiet",
         iconClass: "insert-button-icon-image",
-        label: "Bild einfügen",
+        label: "Bild nur mit Nummerierung einfügen",
+      });
+      const insertPlainButton = buildActionButton({
+        action: "insert-single-plain",
+        id: item.id,
+        variant: "quiet",
+        iconClass: "insert-button-icon-image-plain",
+        label: "Bild ohne Beschriftung einfügen",
       });
 
       actionsContainer.appendChild(insertWithCaptionButton);
       actionsContainer.appendChild(insertButton);
+      actionsContainer.appendChild(insertPlainButton);
       position.appendChild(actionsContainer);
 
       card.appendChild(position);
@@ -595,10 +609,13 @@ function initTaskpane() {
   }
 
   function buildActionButton(options: {
-    action: "insert-single" | "insert-single-caption";
+    action: "insert-single" | "insert-single-caption" | "insert-single-plain";
     id: string;
     variant: "primary" | "quiet";
-    iconClass: "insert-button-icon-image" | "insert-button-icon-text";
+    iconClass:
+      | "insert-button-icon-image"
+      | "insert-button-icon-text"
+      | "insert-button-icon-image-plain";
     label: string;
   }): HTMLButtonElement {
     const button = document.createElement("button");
@@ -651,12 +668,22 @@ function initTaskpane() {
 
       // Stabiler Kernbereich: bestehendes Einzelfoto-Einfuegen unveraendert nutzen.
       const action = button.getAttribute("data-action");
-      const includeCaption = action === "insert-single-caption";
-      await insertSingleImageAtSelection(item, insertSizeCm, { includeCaption });
+      const captionMode: CaptionMode =
+        action === "insert-single-caption"
+          ? "full"
+          : action === "insert-single"
+            ? "numberOnly"
+            : "plainImage";
+      await insertSingleImageAtSelection(item, insertSizeCm, {
+        includeCaption: captionMode !== "plainImage",
+        captionMode,
+      });
       setStatus(
-        includeCaption
+        captionMode === "full"
           ? `Bild "${item.name}" wurde mit Beschriftung in Word eingefügt.`
-          : `Bild "${item.name}" wurde in Word eingefügt.`
+          : captionMode === "numberOnly"
+            ? `Bild "${item.name}" wurde nur mit Nummerierung in Word eingefügt.`
+            : `Bild "${item.name}" wurde ohne Beschriftung in Word eingefügt.`
       );
     } catch (e: any) {
       console.error("Fehler beim Einfügen eines Bildes:", e);
@@ -847,11 +874,15 @@ function initTaskpane() {
   });
 
   insertSelectedButton?.addEventListener("click", async () => {
-    await insertSelectedImages(false);
+    await insertSelectedImages("numberOnly");
   });
 
   insertSelectedCaptionButton?.addEventListener("click", async () => {
-    await insertSelectedImages(true);
+    await insertSelectedImages("full");
+  });
+
+  insertSelectedPlainButton?.addEventListener("click", async () => {
+    await insertSelectedImages("plainImage");
   });
 
   toggleInfoButton?.addEventListener("click", () => {

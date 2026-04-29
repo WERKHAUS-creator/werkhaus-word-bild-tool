@@ -11,12 +11,13 @@
     ></script>
     <style>
       :root {
-        --preview-size: 100px;
+        --preview-size: 120px;
         --insert-action-width: 120px;
         --insert-action-height: 56px;
         --icon-button-size: 36px;
-        --compact-control-size: 28px;
+        --compact-control-size: 36px;
         --bulk-insert-width: 168px;
+        --list-icon-size: 16px;
       }
 
       * {
@@ -411,8 +412,8 @@
       }
 
       .select-label input[type="checkbox"] {
-        width: 16px;
-        height: 16px;
+        width: var(--list-icon-size);
+        height: var(--list-icon-size);
         cursor: pointer;
       }
 
@@ -583,7 +584,7 @@
 
       .image-actions > *,
       .image-actions-right > * {
-        margin-bottom: 6px;
+        margin-bottom: 4px;
       }
 
       .image-actions > *:last-child,
@@ -684,11 +685,11 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 20px;
-        height: 20px;
+        width: var(--list-icon-size);
+        height: var(--list-icon-size);
         line-height: 1;
-        -ms-flex: 0 0 20px;
-        flex: 0 0 20px;
+        -ms-flex: 0 0 var(--list-icon-size);
+        flex: 0 0 var(--list-icon-size);
         position: relative;
       }
 
@@ -699,45 +700,71 @@
       }
 
       .insert-button-icon-image {
-        border: 1.6px solid currentColor;
-        border-radius: 4px;
+        border: 1.5px solid currentColor;
+        border-radius: 3px;
         box-sizing: border-box;
       }
 
       .insert-button-icon-image::before {
-        top: 3px;
-        right: 3px;
-        width: 4px;
-        height: 4px;
+        top: 2px;
+        right: 2px;
+        width: 3px;
+        height: 3px;
         border-radius: 999px;
         background: currentColor;
       }
 
       .insert-button-icon-image::after {
-        left: 3px;
-        bottom: 3px;
-        width: 11px;
-        height: 7px;
+        left: 2px;
+        bottom: 2px;
+        width: 8px;
+        height: 5px;
         background: currentColor;
       }
 
       .insert-button-icon-text::before {
-        left: 2px;
-        top: 2px;
-        width: 16px;
+        left: 1px;
+        top: 1px;
+        width: 14px;
         height: 2px;
         background: currentColor;
         box-shadow:
-          0 5px 0 currentColor,
-          0 10px 0 currentColor;
+          0 4px 0 currentColor,
+          0 8px 0 currentColor;
       }
 
       .insert-button-icon-text::after {
-        left: 2px;
-        top: 14px;
-        width: 9px;
+        left: 1px;
+        top: 11px;
+        width: 8px;
         height: 2px;
         background: currentColor;
+      }
+
+      .insert-button-icon-image-plain {
+        border: 1.5px solid currentColor;
+        border-radius: 3px;
+        box-sizing: border-box;
+      }
+
+      .insert-button-icon-image-plain::before {
+        top: 2px;
+        right: 2px;
+        width: 3px;
+        height: 3px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .insert-button-icon-image-plain::after {
+        left: 3px;
+        bottom: 3px;
+        width: 7px;
+        height: 4px;
+        border-left: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: skewX(-25deg);
+        background: transparent;
       }
 
       .insert-button-primary:hover {
@@ -823,8 +850,8 @@
         <div class="toolbar-row">
           <div class="slider-wrap">
             <label for="previewSizeRange">Vorschaugröße</label>
-            <input type="range" id="previewSizeRange" min="100" max="500" value="100" />
-            <span id="previewSizeValue">100 px</span>
+            <input type="range" id="previewSizeRange" min="120" max="500" value="120" />
+            <span id="previewSizeValue">120 px</span>
           </div>
 
           <div class="slider-wrap">
@@ -844,17 +871,31 @@
           >
             <span class="insert-button-content">
               <span class="insert-button-icon insert-button-icon-text" aria-hidden="true"></span>
-              <span>Alle</span>
+              <span>Alle mit Beschriftung</span>
             </span>
           </button>
           <button
             id="insertSelectedButton"
             class="insert-button insert-button-quiet icon-text-action-button bulk-insert-button"
             type="button"
+            title="Alle Bilder nur mit Nummerierung einfügen"
+            aria-label="Alle Bilder nur mit Nummerierung einfügen"
           >
             <span class="insert-button-content">
               <span class="insert-button-icon insert-button-icon-image" aria-hidden="true"></span>
-              <span>Alle</span>
+              <span>Alle nur Nummer</span>
+            </span>
+          </button>
+          <button
+            id="insertSelectedPlainButton"
+            class="insert-button insert-button-quiet icon-text-action-button bulk-insert-button"
+            type="button"
+            title="Alle Bilder ohne Beschriftung einfügen"
+            aria-label="Alle Bilder ohne Beschriftung einfügen"
+          >
+            <span class="insert-button-content">
+              <span class="insert-button-icon insert-button-icon-image-plain" aria-hidden="true"></span>
+              <span>Alle ohne Beschriftung</span>
             </span>
           </button>
         </div>
