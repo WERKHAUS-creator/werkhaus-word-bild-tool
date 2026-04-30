@@ -11,7 +11,7 @@
     "repair:bin": "bash ./scripts/repair-node-bin-permissions.sh",
     "repair:deps": "rm -rf node_modules package-lock.json && npm install",
     "doctor": "npm run repair:bin && npm run validate && npm run lint && npm run build",
-    "build": "webpack --mode production",
+    "build": "webpack --mode production && cp dist/taskpane.html dist/index.html",
     "build:dev": "webpack --mode development",
     "dev-server": "webpack serve --mode development",
     "lint": "office-addin-lint check",
