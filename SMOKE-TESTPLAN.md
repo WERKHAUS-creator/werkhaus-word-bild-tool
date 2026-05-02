@@ -16,7 +16,7 @@ Kontaktbogen, Mehrfachbild-Einfuegen und Tabellenlayout sind aktuell vorbereitet
 - Caption-Regeln fuer Einzelbild-Ausgabe: [src/taskpane/captions.ts](src/taskpane/captions.ts)
 - Einzelbild-Einfuegen in Word: [src/taskpane/wordInsert.ts](src/taskpane/wordInsert.ts)
 - Vorbereitete Layoutplanung, derzeit nicht in UI/Word-Ausgabe verdrahtet: [src/taskpane/layoutEngine.ts](src/taskpane/layoutEngine.ts), [src/taskpane/pageCalculator.ts](src/taskpane/pageCalculator.ts), [src/taskpane/constants.ts](src/taskpane/constants.ts)
-- Manifest/Ribbon-Konfiguration: [manifest.xml](manifest.xml)
+- Manifest/Ribbon-Konfiguration: [manifest.dev.xml](manifests/manifest.dev.xml)
 
 ## Nicht mehr gueltige Alt-Verweise
 

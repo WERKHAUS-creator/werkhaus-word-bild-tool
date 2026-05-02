@@ -5,7 +5,7 @@ const CopyWebpackPlugin = require("copy-webpack-plugin");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 
 const urlDev = "https://localhost:3001/";
-const urlProd = "https://your-production-url.example.com/"; // spaeter auf echte URL setzen
+const urlProd = "https://tool2.wh-sv.de/";
 
 async function getHttpsOptions() {
   const certDirectory = path.join(os.homedir(), ".office-addin-dev-certs");
@@ -87,8 +87,10 @@ module.exports = async (env, options) => {
             to: "assets/[name][ext][query]",
           },
           {
-            from: "manifest*.xml",
-            to: "[name][ext]",
+            from: "manifests/*.xml",
+            to({ absoluteFilename }) {
+              return `manifests/${path.basename(absoluteFilename)}`;
+            },
             transform(content) {
               if (dev) {
                 return content;
