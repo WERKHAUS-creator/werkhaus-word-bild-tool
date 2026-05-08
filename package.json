@@ -1,6 +1,6 @@
 {
   "name": "werkhaus-word-bild",
-  "version": "0.0.1",
+  "version": "1.0.0.1",
   "license": "MIT",
   "config": {
     "app_to_debug": "word",
@@ -9,7 +9,9 @@
   },
   "scripts": {
     "repair:bin": "bash ./scripts/repair-node-bin-permissions.sh",
-    "repair:deps": "rm -rf node_modules package-lock.json && npm install",
+    "clean:deps": "rm -rf node_modules",
+    "reinstall:deps": "npm ci",
+    "repair:deps": "npm run clean:deps && npm run reinstall:deps",
     "doctor": "npm run repair:bin && npm run validate:dev && npm run validate:prod && npm run lint && npm run build",
     "build": "node ./node_modules/webpack/bin/webpack.js --mode production && cp dist/taskpane.html dist/index.html",
     "build:dev": "node ./node_modules/webpack/bin/webpack.js --mode development",
@@ -19,9 +21,9 @@
     "prettier": "node ./node_modules/office-addin-lint/lib/cli.js prettier",
     "signin": "office-addin-dev-settings m365-account login",
     "signout": "office-addin-dev-settings m365-account logout",
-    "start": "node ./node_modules/office-addin-debugging/cli.js start manifests/manifest.dev.xml",
-    "stop": "node ./node_modules/office-addin-debugging/cli.js stop manifests/manifest.dev.xml",
-    "validate": "npm run validate:dev",
+    "start": "node ./node_modules/office-addin-debugging/cli.js start manifests/manifest.prod.xml",
+    "stop": "node ./node_modules/office-addin-debugging/cli.js stop manifests/manifest.prod.xml",
+    "validate": "npm run validate:prod",
     "watch": "node ./node_modules/webpack/bin/webpack.js --mode development --watch",
     "start:prod": "node ./node_modules/office-addin-debugging/cli.js start manifests/manifest.prod.xml",
     "stop:prod": "node ./node_modules/office-addin-debugging/cli.js stop manifests/manifest.prod.xml",

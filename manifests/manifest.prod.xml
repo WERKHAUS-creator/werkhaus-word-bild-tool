@@ -14,8 +14,8 @@
   <DisplayName DefaultValue="WERKHAUS Word &amp; Bild"/>
   <Description DefaultValue="WERKHAUS Word &amp; Bild zum Einfügen, Beschriften und Verwalten von Bildern in Word-Dokumenten inklusive Bilddokumentation und Abbildungsverzeichnis."/>
 
-  <IconUrl DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-32.png?v=2"/>
-  <HighResolutionIconUrl DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-64.png?v=2"/>
+  <IconUrl DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-test-blue-32.png?v=1"/>
+  <HighResolutionIconUrl DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-test-blue-64.png?v=1"/>
   <SupportUrl DefaultValue="https://tool2.wh-sv.de/taskpane.html"/>
 
   <AppDomains>
@@ -88,9 +88,9 @@
 
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-16.png?v=2"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-32.png?v=2"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-80.png?v=2"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-test-blue-16.png?v=1"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-test-blue-32.png?v=1"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://tool2.wh-sv.de/assets/werkhaus-test-blue-80.png?v=1"/>
       </bt:Images>
 
       <bt:Urls>
