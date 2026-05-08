@@ -21,5 +21,7 @@ pnpm-debug.log*
 .idea/
 .tmp/
 tmp/
+.npm-cache/
+.node-gyp-cache/
 .cache/
 .!*
