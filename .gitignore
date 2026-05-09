@@ -28,3 +28,6 @@ localhost.key
 .office-addin-dev-certs/
 .tmp/
 tmp/
+.home/
+.npm-cache/
+.node-gyp/
