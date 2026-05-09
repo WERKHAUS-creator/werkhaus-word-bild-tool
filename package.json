@@ -10,7 +10,8 @@
   "scripts": {
     "repair:bin": "bash ./scripts/repair-node-bin-permissions.sh",
     "repair:deps": "rm -rf node_modules package-lock.json && npm install",
-    "doctor": "npm run repair:bin && npm run validate && npm run lint && npm run build",
+    "doctor": "npm run repair:bin && npm run check:manifests && npm run validate:local && npm run validate:prod && npm run lint && npm run build",
+    "check:manifests": "node scripts/check-manifests.js",
     "build": "webpack --mode production && cp dist/taskpane.html dist/index.html",
     "build:dev": "webpack --mode development",
     "dev-server": "webpack serve --mode development",
@@ -19,9 +20,12 @@
     "prettier": "office-addin-lint prettier",
     "signin": "office-addin-dev-settings m365-account login",
     "signout": "office-addin-dev-settings m365-account logout",
-    "start": "office-addin-debugging start manifest.xml",
-    "stop": "office-addin-debugging stop manifest.xml",
-    "validate": "office-addin-manifest validate manifest.xml",
+    "start": "office-addin-debugging start manifest.local.xml",
+    "stop": "office-addin-debugging stop manifest.local.xml",
+    "validate": "npm run validate:local",
+    "validate:local": "office-addin-manifest validate manifest.local.xml",
+    "validate:prod": "office-addin-manifest validate manifest.production.xml",
+    "validate:dist": "office-addin-manifest validate dist/manifest.xml",
     "watch": "webpack --mode development --watch"
   },
   "dependencies": {
