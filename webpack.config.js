@@ -4,9 +4,6 @@ const path = require("path");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 
-const urlDev = "https://localhost:3001/";
-const urlProd = "https://tool2.wh-sv.de/";
-
 async function getHttpsOptions() {
   const certDirectory = path.join(os.homedir(), ".office-addin-dev-certs");
   const caPath = path.join(certDirectory, "ca.crt");
@@ -87,14 +84,8 @@ module.exports = async (env, options) => {
             to: "assets/[name][ext][query]",
           },
           {
-            from: "manifest*.xml",
-            to: "[name][ext]",
-            transform(content) {
-              if (dev) {
-                return content;
-              }
-              return content.toString().replace(new RegExp(urlDev, "g"), urlProd);
-            },
+            from: dev ? "manifest.local.xml" : "manifest.production.xml",
+            to: "manifest.xml",
           },
         ],
       }),
