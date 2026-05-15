@@ -545,14 +545,15 @@ function initTaskpane() {
 
   async function readProjectFileFromFolderHandle(
     folderHandle: ProjectFolderHandle
-  ): Promise<BilddatenProjectFile | undefined> {
+  ): Promise<"missing" | "invalid" | BilddatenProjectFile> {
     try {
       const fileHandle = await folderHandle.getFileHandle(PROJECT_FILE_NAME, { create: false });
       const file = await fileHandle.getFile();
       const rawText = await file.text();
-      return parseBilddatenProjectFile(rawText);
+      const projectFile = parseBilddatenProjectFile(rawText);
+      return projectFile || "invalid";
     } catch {
-      return undefined;
+      return "missing";
     }
   }
 
@@ -561,12 +562,16 @@ function initTaskpane() {
       return undefined;
     }
 
-    const projectFile = await readProjectFileFromFolderHandle(currentFolderHandle);
-    if (!projectFile) {
+    const projectFileResult = await readProjectFileFromFolderHandle(currentFolderHandle);
+    if (projectFileResult === "missing") {
       return undefined;
     }
 
-    const result = applyProjectFileToLoadedImages(projectFile);
+    if (projectFileResult === "invalid") {
+      return "bilddaten.json konnte nicht geladen werden.";
+    }
+
+    const result = applyProjectFileToLoadedImages(projectFileResult);
     return buildProjectSummaryMessage(`bilddaten.json automatisch geladen`, result);
   }
 
@@ -605,7 +610,29 @@ function initTaskpane() {
       return "saved";
     } catch (error) {
       console.error("Fehler beim Speichern von bilddaten.json:", error);
+      setStatus("Schreibzugriff auf den Bildordner fehlgeschlagen. Download-Fallback wird verwendet.");
       return "failed";
+    }
+  }
+
+  function downloadProjectFile(serializedProjectFile: string): boolean {
+    try {
+      const blob = new Blob([serializedProjectFile], {
+        type: "application/json;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = PROJECT_FILE_NAME;
+      anchor.style.display = "none";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      return true;
+    } catch (error) {
+      console.error("Fehler beim Erzeugen des JSON-Downloads:", error);
+      return false;
     }
   }
 
@@ -652,9 +679,14 @@ function initTaskpane() {
         return;
       } catch (error) {
         console.warn("Speichern über showSaveFilePicker fehlgeschlagen oder abgebrochen:", error);
-        setStatus("Speichern abgebrochen.");
-        return;
       }
+    }
+
+    const downloaded = downloadProjectFile(serializedProjectFile);
+    if (downloaded) {
+      currentProjectCreatedAt = projectFile.createdAt;
+      setStatus(`bilddaten.json wurde als Download erzeugt.`);
+      return;
     }
 
     setStatus("Speichern nicht unterstützt. Bitte Ordner über die native Ordnerauswahl laden.");
