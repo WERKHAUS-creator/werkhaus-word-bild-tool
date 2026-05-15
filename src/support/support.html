@@ -4,8 +4,12 @@
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WERKHAUS Word &amp; Bild Support</title>
+    <title>Support - WERKHAUS Word &amp; Bild</title>
     <style>
+      :root {
+        color-scheme: light;
+      }
+
       body {
         margin: 0;
         padding: 24px;
@@ -15,7 +19,7 @@
       }
 
       main {
-        max-width: 720px;
+        max-width: 780px;
         margin: 0 auto;
         background: #fff;
         border: 1px solid #d8d8d8;
@@ -23,9 +27,28 @@
         padding: 24px;
       }
 
+      .brand {
+        margin-bottom: 20px;
+        line-height: 1;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: #444;
+      }
+
+      .brand .line {
+        display: block;
+        font-size: 18px;
+      }
+
       h1 {
         margin: 0 0 12px;
         font-size: 24px;
+        line-height: 1.2;
+      }
+
+      h2 {
+        margin: 24px 0 10px;
+        font-size: 16px;
         line-height: 1.2;
       }
 
@@ -39,8 +62,21 @@
         padding: 0;
       }
 
+      li {
+        margin: 0 0 6px;
+        line-height: 1.45;
+      }
+
       a {
         color: #004578;
+      }
+
+      .hint {
+        margin: 0 0 16px;
+        padding: 12px 14px;
+        background: #f3f7fb;
+        border: 1px solid #d8e3ef;
+        border-radius: 8px;
       }
 
       .meta {
@@ -50,20 +86,102 @@
         font-size: 13px;
         color: #555;
       }
+
+      .back-link {
+        display: inline-block;
+        margin-top: 4px;
+      }
     </style>
   </head>
   <body>
     <main>
-      <h1>WERKHAUS Word &amp; Bild Support</h1>
-      <p>Diese Seite dient als zentrale Support- und Hinweis-Seite für das Word-Add-in.</p>
+      <div class="brand">
+        <span class="line">WERKHAUS</span>
+        <span class="line">Word &amp; Bild</span>
+      </div>
+
+      <h1>Support - WERKHAUS Word &amp; Bild</h1>
+      <p>
+        Diese Seite hilft bei Fragen und typischen Problemen mit dem Add-in. Hier finden Sie
+        Unterstützung zum Laden von Bildern, zum Beschriften, zum Sortieren, zum Einfügen in
+        Word sowie zu häufigen Word- und Add-in-Problemen.
+      </p>
+
+      <p>
+        <a href="mailto:hubenschmid@wh-ai.de">Support kontaktieren</a>
+        <br />
+        <a href="#faq">Zu den häufigen Fragen</a>
+      </p>
+
+      <div class="hint">
+        <strong>Soforthilfe:</strong> Wenn das Add-in unerwartet reagiert, in Word zuerst
+        <em>Erneut laden</em> verwenden. Wenn das Problem bestehen bleibt, anschließend den
+        Webcache löschen und Word neu starten.
+      </div>
+
+      <h2>Kurzanleitung</h2>
       <ul>
-        <li>Prüfe, ob das Add-in die aktuelle Produktionsversion geladen hat.</li>
-        <li>Nutze diese Seite als Einstiegspunkt für interne Rückfragen und Hinweise.</li>
-        <li>Wenn Word das Add-in nicht lädt, zuerst den Office-Cache prüfen und Word neu starten.</li>
+        <li>Öffnen Sie Word und starten Sie WERKHAUS Word &amp; Bild.</li>
+        <li>Laden Sie den gewünschten Bildordner oder die Bilddateien.</li>
+        <li>Prüfen Sie die im Taskpane gelisteten Bilder.</li>
+        <li>Beschriften, sortieren und aktivieren Sie die gewünschten Bilder.</li>
+        <li>Fügen Sie die Bilder bei Bedarf in Word ein.</li>
+        <li>Nutzen Sie die Beschriftungs- und Nummerierungsfunktionen für die Dokumentation.</li>
       </ul>
-      <p>Zur eigentlichen Arbeitsoberfläche geht es hier zurück:</p>
-      <p><a href="/taskpane.html">WERKHAUS Word &amp; Bild öffnen</a></p>
-      <div class="meta">Supportseite ohne JavaScript, bewusst stabil und statisch gehalten.</div>
+
+      <h2>Zweck des Add-ins</h2>
+      <p>
+        WERKHAUS Word &amp; Bild unterstützt die strukturierte Verwaltung von Bildern für
+        Word-Dokumente. Bilder können geladen, beschriftet, sortiert, aktiviert oder deaktiviert
+        und anschließend in Word eingefügt werden.
+      </p>
+      <p>
+        Typische Anwendungsfälle sind Bilddokumentationen, Berichte, Vorlagen und die
+        wiederholbare Erstellung von Word-Dokumenten mit konsistenter Bildreihenfolge.
+      </p>
+
+      <h2>Fehlerbehebung</h2>
+      <ul>
+        <li>Prüfen Sie, ob Word und das Add-in vollständig geladen sind.</li>
+        <li>Wählen Sie bei Auffälligkeiten zuerst <em>Erneut laden</em>.</li>
+        <li>Wenn das Problem fortbesteht, nutzen Sie <em>Webcache löschen</em>.</li>
+        <li>Schließen Sie Word vollständig und öffnen Sie Dokument und Add-in erneut.</li>
+        <li>Prüfen Sie, ob der Bildordner erreichbar und lesbar ist.</li>
+        <li>Prüfen Sie, ob die Bilder gültige Dateiformate haben.</li>
+      </ul>
+
+      <h2 id="faq">Häufige Fragen</h2>
+      <p><strong>Warum werden keine Bilder angezeigt?</strong><br />Meist wurde noch kein gültiger
+        Bildordner oder keine Bilddatei geladen.</p>
+      <p><strong>Warum werden Beschriftungen nicht übernommen?</strong><br />Prüfen Sie, ob die
+        Bilder bereits gespeichert wurden und ob die aktuelle Liste geladen ist.</p>
+      <p><strong>Warum sieht die Reihenfolge anders aus?</strong><br />Prüfen Sie die Sortierung
+        oder ob eine manuelle Reihenfolge aktiv ist.</p>
+      <p><strong>Was tun bei ungewöhnlichem Verhalten?</strong><br />Starten Sie mit
+        <em>Erneut laden</em>. Wenn nötig, löschen Sie anschließend den Webcache und starten Word
+        neu.</p>
+
+      <h2>Kontakt</h2>
+      <p>
+        Wenn Sie Unterstützung benötigen, senden Sie bitte eine kurze Beschreibung des Problems:
+        Was wurde gemacht, was ist passiert und was wurde erwartet? So kann die Anfrage schneller
+        eingeordnet werden.
+      </p>
+      <p>
+        <strong>E-Mail:</strong> <a href="mailto:hubenschmid@wh-ai.de">hubenschmid@wh-ai.de</a><br />
+        <strong>Produkt:</strong> WERKHAUS Word &amp; Bild<br />
+        <strong>Domain:</strong> wh-sv.de
+      </p>
+      <p>
+        Hinweis: Geben Sie nach Möglichkeit Ihre Word-Version, das Betriebssystem und eine kurze
+        Problembeschreibung an.
+      </p>
+
+      <p class="back-link">
+        <a href="/taskpane.html">Zurück zum WERKHAUS Word &amp; Bild Taskpane</a>
+      </p>
+
+      <div class="meta">WERKHAUS Word &amp; Bild - Supportseite</div>
     </main>
   </body>
 </html>
