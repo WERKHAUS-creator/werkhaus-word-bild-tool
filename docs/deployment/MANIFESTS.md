@@ -7,6 +7,7 @@
 ## Generated manifests
 - `manifest.dev.xml` is generated for local Word testing and points to `https://localhost:3001`.
 - `manifest.xml` is generated for production publishing and points to `https://tool2.wh-sv.de`.
+- `SupportUrl` points to `support.html` on the same base URL.
 - `npm run start`, `npm run build`, `npm run validate:dev`, and `npm run validate:prod` generate the manifests automatically.
 - `npm run build` also copies `manifest.xml` to `dist/manifest.xml`.
 
