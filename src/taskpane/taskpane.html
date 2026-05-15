@@ -10,6 +10,19 @@
       src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"
     ></script>
     <link rel="stylesheet" href="taskpane.css" />
+    <script>
+      if (window.location.protocol === "file:") {
+        const distBaseUrl = new URL("../../dist/", window.location.href).toString();
+        const scriptSources = ["polyfill.js", "taskpane.js"];
+
+        for (const scriptName of scriptSources) {
+          const script = document.createElement("script");
+          script.defer = true;
+          script.src = `${distBaseUrl}${scriptName}`;
+          document.head.appendChild(script);
+        }
+      }
+    </script>
   </head>
   <body>
     <main class="container">
