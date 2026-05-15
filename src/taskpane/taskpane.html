@@ -13,104 +13,190 @@
   </head>
   <body>
     <main class="container">
-      <section class="section">
-        <h2>Status</h2>
-        <div id="statusMessage" class="status-box">Bereit.</div>
-      </section>
-
-      <section class="section">
-        <h2>Bilder / Ordner hinzufügen</h2>
-
-        <!-- Stabiler Kernbereich: vorhandene Import- und Listenlogik nicht mit Zusatzpfaden vermischen. -->
-        <div class="toolbar-row button-bar">
-          <button id="pickFilesButton" type="button">Dateien</button>
-          <button id="pickFolderButton" type="button">Ordner</button>
-          <button id="toggleInfoButton" type="button">Bild Infos</button>
-          <button id="toggleCaptionButton" type="button">Beschriftung</button>
-          <button id="clearImagesButton" type="button">Liste leeren</button>
-        </div>
-
-        <div class="toolbar-row">
-          <div class="slider-wrap">
-            <label for="previewSizeRange">Vorschaugröße</label>
-            <input type="range" id="previewSizeRange" min="120" max="500" value="120" />
-            <span id="previewSizeValue">120 px</span>
-          </div>
-
-          <div class="slider-wrap">
-            <label for="insertSizeRange">Lange Seite</label>
-            <input type="range" id="insertSizeRange" min="2" max="16" step="0.5" value="10" />
-            <span id="insertSizeValue">10.0 cm</span>
+      <section class="section section-global-actions">
+        <div class="section-header">
+          <h2>Globale Steuerung</h2>
+          <div class="section-header-actions">
+            <button id="expandAllSectionsButton" type="button">Alle einblenden</button>
+            <button id="collapseAllSectionsButton" type="button">Alle ausblenden</button>
           </div>
         </div>
+      </section>
 
-        <div class="toolbar-row button-bar bulk-actions">
-          <button id="selectAllButton" type="button">Alle auswählen</button>
-          <button id="selectNoneButton" type="button">Alle abwählen</button>
+      <section class="section collapsible-section" data-section-key="import">
+        <div class="section-header">
+          <h2>Bildimport</h2>
           <button
-            id="insertSelectedCaptionButton"
-            class="insert-button insert-button-primary icon-text-action-button bulk-insert-button"
             type="button"
-          >
-            <span class="insert-button-content">
-              <span class="insert-button-icon insert-button-icon-text" aria-hidden="true"></span>
-              <span>Alle mit Beschriftung</span>
-            </span>
-          </button>
-          <button
-            id="insertSelectedButton"
-            class="insert-button insert-button-quiet icon-text-action-button bulk-insert-button"
-            type="button"
-            title="Alle Bilder nur mit Nummerierung einfügen"
-            aria-label="Alle Bilder nur mit Nummerierung einfügen"
-          >
-            <span class="insert-button-content">
-              <span class="insert-button-icon insert-button-icon-image" aria-hidden="true"></span>
-              <span>Alle nur Nummer</span>
-            </span>
-          </button>
-          <button
-            id="insertSelectedPlainButton"
-            class="insert-button insert-button-quiet icon-text-action-button bulk-insert-button"
-            type="button"
-            title="Alle Bilder ohne Beschriftung einfügen"
-            aria-label="Alle Bilder ohne Beschriftung einfügen"
-          >
-            <span class="insert-button-content">
-              <span class="insert-button-icon insert-button-icon-image-plain" aria-hidden="true"></span>
-              <span>Alle ohne Beschriftung</span>
-            </span>
-          </button>
+            class="section-toggle"
+            data-section-toggle="import"
+            aria-expanded="true"
+            aria-label="Bereich einklappen"
+            title="Bereich einklappen"
+          ></button>
         </div>
+        <div class="section-body">
+          <!-- Stabiler Kernbereich: vorhandene Import- und Listenlogik nicht mit Zusatzpfaden vermischen. -->
+          <div class="toolbar-row button-bar">
+            <button id="pickFilesButton" type="button">Dateien</button>
+            <button id="pickFolderButton" type="button">Ordner</button>
+            <button id="clearImagesButton" type="button">Liste leeren</button>
+          </div>
 
-        <input
-          id="imageUpload"
-          class="hidden-input"
-          type="file"
-          accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.gif,.bmp"
-          multiple
-        />
+          <input
+            id="imageUpload"
+            class="hidden-input"
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.gif,.bmp"
+            multiple
+          />
 
-        <input
-          id="folderUpload"
-          class="hidden-input"
-          type="file"
-          accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.gif,.bmp"
-          webkitdirectory
-          multiple
-        />
+          <input
+            id="folderUpload"
+            class="hidden-input"
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.gif,.bmp"
+            webkitdirectory
+            multiple
+          />
+
+          <div id="imageDropZone" class="drop-zone" aria-label="Bilddateien hier ablegen">
+            <strong>Bilder hier hineinziehen</strong>
+            <span>Unterstützt: JPG, PNG, WEBP, TIF, TIFF, GIF, BMP</span>
+          </div>
+        </div>
       </section>
 
-      <section class="section">
-        <h2>Bildliste</h2>
-        <div id="imageList" class="image-list"></div>
+      <section class="section collapsible-section" data-section-key="data">
+        <div class="section-header">
+          <h2>Bilddaten</h2>
+          <button
+            type="button"
+            class="section-toggle"
+            data-section-toggle="data"
+            aria-expanded="true"
+            aria-label="Bereich einklappen"
+            title="Bereich einklappen"
+          ></button>
+        </div>
+        <div class="section-body">
+          <div class="toolbar-row button-bar">
+            <button id="saveProjectButton" type="button">Speichern</button>
+            <button id="loadProjectButton" type="button">Laden</button>
+            <button id="toggleInfoButton" type="button">Bild Infos</button>
+            <button id="toggleCaptionButton" type="button">Beschriftung</button>
+          </div>
+
+          <div class="status-inline">
+            <div class="status-inline-label">Status</div>
+            <div id="statusMessage" class="status-box">Bereit.</div>
+          </div>
+
+          <input
+            id="projectImportUpload"
+            class="hidden-input"
+            type="file"
+            accept=".json,application/json"
+          />
+        </div>
       </section>
 
-      <section class="section">
-        <h2>Drag &amp; Drop</h2>
-        <div id="imageDropZone" class="drop-zone" aria-label="Bilddateien hier ablegen">
-          <strong>Bilder hier hineinziehen</strong>
-          <span>Unterstützt: JPG, PNG, WEBP, TIF, TIFF, GIF, BMP</span>
+      <section class="section collapsible-section" data-section-key="view">
+        <div class="section-header">
+          <h2>Ansicht / Sortierung / Auswahl</h2>
+          <button
+            type="button"
+            class="section-toggle"
+            data-section-toggle="view"
+            aria-expanded="true"
+            aria-label="Bereich einklappen"
+            title="Bereich einklappen"
+          ></button>
+        </div>
+        <div class="section-body">
+          <div class="toolbar-row sort-row">
+            <div class="select-wrap sort-wrap">
+              <label for="sortModeSelect">Sortierung</label>
+              <select id="sortModeSelect">
+                <option value="exifDate">EXIF-Aufnahmedatum</option>
+                <option value="name">Bildname</option>
+                <option value="custom">Eigene Sortierung</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="toolbar-row">
+            <div class="slider-wrap">
+              <label for="previewSizeRange">Vorschaugröße</label>
+              <input type="range" id="previewSizeRange" min="120" max="500" value="120" />
+              <span id="previewSizeValue">120 px</span>
+            </div>
+
+            <div class="slider-wrap">
+              <label for="insertSizeRange">Lange Seite</label>
+              <input type="range" id="insertSizeRange" min="2" max="16" step="0.5" value="10" />
+              <span id="insertSizeValue">10.0 cm</span>
+            </div>
+          </div>
+
+          <div class="toolbar-row button-bar bulk-actions">
+            <button id="selectAllButton" type="button">Alle auswählen</button>
+            <button id="selectNoneButton" type="button">Alle abwählen</button>
+            <button
+              id="insertSelectedCaptionButton"
+              class="insert-button insert-button-primary icon-text-action-button bulk-insert-button"
+              type="button"
+            >
+              <span class="insert-button-content">
+                <span class="insert-button-icon insert-button-icon-text" aria-hidden="true"></span>
+                <span>Alle mit Beschriftung</span>
+              </span>
+            </button>
+            <button
+              id="insertSelectedButton"
+              class="insert-button insert-button-quiet icon-text-action-button bulk-insert-button"
+              type="button"
+              title="Alle Bilder nur mit Nummerierung einfügen"
+              aria-label="Alle Bilder nur mit Nummerierung einfügen"
+            >
+              <span class="insert-button-content">
+                <span class="insert-button-icon insert-button-icon-image" aria-hidden="true"></span>
+                <span>Alle nur Nummer</span>
+              </span>
+            </button>
+            <button
+              id="insertSelectedPlainButton"
+              class="insert-button insert-button-quiet icon-text-action-button bulk-insert-button"
+              type="button"
+              title="Alle Bilder ohne Beschriftung einfügen"
+              aria-label="Alle Bilder ohne Beschriftung einfügen"
+            >
+              <span class="insert-button-content">
+                <span
+                  class="insert-button-icon insert-button-icon-image-plain"
+                  aria-hidden="true"
+                ></span>
+                <span>Alle ohne Beschriftung</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="section collapsible-section" data-section-key="list">
+        <div class="section-header">
+          <h2>Bildliste</h2>
+          <button
+            type="button"
+            class="section-toggle"
+            data-section-toggle="list"
+            aria-expanded="true"
+            aria-label="Bereich einklappen"
+            title="Bereich einklappen"
+          ></button>
+        </div>
+        <div class="section-body">
+          <div id="imageList" class="image-list"></div>
         </div>
       </section>
     </main>

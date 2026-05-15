@@ -123,6 +123,8 @@ export async function importImageFiles(
         id: createId(),
         key,
         name: file.name,
+        relativePath: getFileRelativePath(file),
+        lastModified: file.lastModified,
         size: file.size,
         base64: dataUrlToBase64(dataUrl),
         previewUrl: dataUrl,
@@ -176,6 +178,21 @@ function createId(): string {
 
 function makeFileKey(file: File): string {
   return `${file.name}__${file.size}__${file.lastModified}`;
+}
+
+function getFileRelativePath(file: File): string | undefined {
+  const fileWithRelativePath = file as File & {
+    relativePath?: string;
+    webkitRelativePath?: string;
+  };
+  const relativePath =
+    fileWithRelativePath.relativePath || fileWithRelativePath.webkitRelativePath || "";
+
+  if (relativePath.trim().length > 0) {
+    return relativePath;
+  }
+
+  return file.name || undefined;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {

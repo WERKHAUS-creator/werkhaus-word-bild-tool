@@ -2,7 +2,9 @@ export interface ImageItem {
   id: string;
   key: string;
   name: string;
+  relativePath?: string;
   size: number;
+  lastModified?: number;
   base64: string;
   previewUrl: string;
   hash: string;
@@ -19,6 +21,7 @@ export interface ImageItem {
 }
 
 export type CaptionMode = "full" | "numberOnly" | "plainImage";
+export type SortMode = "exifDate" | "name" | "custom";
 
 export type LayoutKind = 1 | 2 | 4 | 6 | 8 | 12 | 16;
 

@@ -1,19 +1,54 @@
-import type { CaptionMode, ImageItem } from "./types";
+import type { CaptionMode, ImageItem, SortMode } from "./types";
 import { IMAGE_FILE_INPUT_ACCEPT, importImageFiles } from "./importImages";
 import { createTaskpanePersistence } from "./persistence";
+import {
+  type BilddatenProjectFile,
+  type BilddatenProjectImage,
+  PROJECT_FILE_NAME,
+  buildBilddatenProjectFile,
+  matchProjectImagesToItems,
+  parseBilddatenProjectFile,
+  serializeBilddatenProjectFile,
+} from "./projectFile";
 import { insertSingleImageAtSelection } from "./wordInsert";
+
+type ProjectFolderHandle = {
+  getFileHandle(
+    name: string,
+    options?: { create?: boolean }
+  ): Promise<{
+    getFile(): Promise<File>;
+    createWritable(): Promise<{
+      write(data: string): Promise<void>;
+      close(): Promise<void>;
+    }>;
+  }>;
+  values(): AsyncIterableIterator<any>;
+};
 
 // Stabiler Kernbereich:
 // Bildimport, Bildauswahl und Einzelfoto-Einfuegen bleiben hier bewusst getrennt.
 // Nur bei nachgewiesenem Fehler an diesen Pfaden aendern.
 let imageItems: ImageItem[] = [];
+let currentFolderHandle: ProjectFolderHandle | null = null;
+let currentProjectCreatedAt = new Date().toISOString();
 const DEFAULT_PREVIEW_SIZE_PX = 120;
 const MIN_PREVIEW_SIZE_PX = 120;
 const MAX_PREVIEW_SIZE_PX = 500;
 const MAX_INSERT_SIZE_CM = 16;
+const naturalSortCollator = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
 
 function initTaskpane() {
-  const { loadAllMeta, getMeta, setMeta } = createTaskpanePersistence();
+  const {
+    loadAllMeta,
+    loadSettings,
+    getMeta,
+    setMeta,
+    getSortMode,
+    setSortMode,
+    getCollapsedSections,
+    setCollapsedSections,
+  } = createTaskpanePersistence();
   const statusElement = document.getElementById("statusMessage");
   const imageList = document.getElementById("imageList");
   const dropZone = document.getElementById("imageDropZone");
@@ -23,9 +58,14 @@ function initTaskpane() {
 
   const pickFilesButton = document.getElementById("pickFilesButton");
   const pickFolderButton = document.getElementById("pickFolderButton");
+  const saveProjectButton = document.getElementById("saveProjectButton");
+  const loadProjectButton = document.getElementById("loadProjectButton");
+  const expandAllSectionsButton = document.getElementById("expandAllSectionsButton");
+  const collapseAllSectionsButton = document.getElementById("collapseAllSectionsButton");
   const clearImagesButton = document.getElementById("clearImagesButton");
   const toggleInfoButton = document.getElementById("toggleInfoButton");
   const toggleCaptionButton = document.getElementById("toggleCaptionButton");
+  const sortModeSelect = document.getElementById("sortModeSelect") as HTMLSelectElement | null;
   const selectAllButton = document.getElementById("selectAllButton");
   const selectNoneButton = document.getElementById("selectNoneButton");
   const insertSelectedButton = document.getElementById("insertSelectedButton");
@@ -36,11 +76,16 @@ function initTaskpane() {
   const previewSizeValue = document.getElementById("previewSizeValue");
   const insertSizeRange = document.getElementById("insertSizeRange") as HTMLInputElement | null;
   const insertSizeValue = document.getElementById("insertSizeValue");
+  const projectImportUpload = document.getElementById(
+    "projectImportUpload"
+  ) as HTMLInputElement | null;
 
   loadAllMeta();
+  loadSettings();
 
   let insertSizeCm = 10;
   let previewSizePx = DEFAULT_PREVIEW_SIZE_PX;
+  let sortMode: SortMode = getSortMode() || "custom";
 
   let showInfo = false;
   let showCaptions = false;
@@ -162,6 +207,481 @@ function initTaskpane() {
     }
   }
 
+  function getSortModeLabel(mode: SortMode): string {
+    if (mode === "exifDate") {
+      return "EXIF-Aufnahmedatum";
+    }
+
+    if (mode === "name") {
+      return "Bildname";
+    }
+
+    return "Eigene Sortierung";
+  }
+
+  function updateSortUI() {
+    if (sortModeSelect && sortModeSelect.value !== sortMode) {
+      sortModeSelect.value = sortMode;
+    }
+
+    if (sortModeSelect) {
+      const sortLabel = getSortModeLabel(sortMode);
+      sortModeSelect.setAttribute("aria-label", `Sortierung: ${sortLabel}`);
+      sortModeSelect.setAttribute("title", `Aktuell: ${sortLabel}`);
+    }
+  }
+
+  function getCollapsibleSections(): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(".collapsible-section"));
+  }
+
+  function getSectionKey(section: HTMLElement): string | null {
+    const sectionKey = section.getAttribute("data-section-key");
+    return sectionKey && sectionKey.length > 0 ? sectionKey : null;
+  }
+
+  function updateSectionToggleButton(section: HTMLElement, collapsed: boolean) {
+    const toggleButton = section.querySelector<HTMLButtonElement>("[data-section-toggle]");
+    if (!toggleButton) {
+      return;
+    }
+
+    toggleButton.textContent = "";
+    toggleButton.setAttribute("aria-expanded", String(!collapsed));
+    toggleButton.setAttribute(
+      "aria-label",
+      collapsed ? "Bereich ausklappen" : "Bereich einklappen"
+    );
+    toggleButton.setAttribute("title", collapsed ? "Bereich ausklappen" : "Bereich einklappen");
+  }
+
+  function setSectionCollapsed(sectionKey: string, collapsed: boolean, persistState = true) {
+    const section = document.querySelector<HTMLElement>(`[data-section-key="${sectionKey}"]`);
+    if (!section) {
+      return;
+    }
+
+    section.classList.toggle("is-collapsed", collapsed);
+    updateSectionToggleButton(section, collapsed);
+
+    if (persistState) {
+      persistCollapsedSectionsState();
+    }
+  }
+
+  function persistCollapsedSectionsState() {
+    const collapsedSectionKeys = getCollapsibleSections()
+      .filter((section) => section.classList.contains("is-collapsed"))
+      .map((section) => getSectionKey(section))
+      .filter((sectionKey): sectionKey is string => sectionKey !== null);
+
+    setCollapsedSections(collapsedSectionKeys);
+  }
+
+  function setAllSectionsCollapsed(collapsed: boolean, persistState = true) {
+    for (const section of getCollapsibleSections()) {
+      section.classList.toggle("is-collapsed", collapsed);
+      updateSectionToggleButton(section, collapsed);
+    }
+
+    if (persistState) {
+      persistCollapsedSectionsState();
+    }
+  }
+
+  function restoreCollapsedSections() {
+    const storedCollapsedSections = new Set(getCollapsedSections());
+
+    setAllSectionsCollapsed(false, false);
+
+    for (const section of getCollapsibleSections()) {
+      const sectionKey = getSectionKey(section);
+      if (!sectionKey) {
+        continue;
+      }
+
+      if (storedCollapsedSections.has(sectionKey)) {
+        setSectionCollapsed(sectionKey, true, false);
+      }
+    }
+  }
+
+  function bindSectionToggleButtons() {
+    const toggleButtons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("[data-section-toggle]")
+    );
+
+    toggleButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const sectionKey = button.getAttribute("data-section-toggle");
+        if (!sectionKey) {
+          return;
+        }
+
+        const section = document.querySelector<HTMLElement>(`[data-section-key="${sectionKey}"]`);
+        if (!section) {
+          return;
+        }
+
+        const collapsed = !section.classList.contains("is-collapsed");
+        setSectionCollapsed(sectionKey, collapsed);
+      });
+    });
+  }
+
+  function parseExifTimestamp(rawValue?: string): number | null {
+    if (!rawValue) {
+      return null;
+    }
+
+    const normalized = rawValue.trim();
+    const match = normalized.match(/^(\d{4}):(\d{2}):(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?$/);
+
+    if (!match) {
+      return null;
+    }
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4] || "0");
+    const minute = Number(match[5] || "0");
+    const second = Number(match[6] || "0");
+
+    const candidate = new Date(year, month - 1, day, hour, minute, second);
+    if (
+      candidate.getFullYear() !== year ||
+      candidate.getMonth() !== month - 1 ||
+      candidate.getDate() !== day ||
+      candidate.getHours() !== hour ||
+      candidate.getMinutes() !== minute ||
+      candidate.getSeconds() !== second
+    ) {
+      return null;
+    }
+
+    const timestamp = candidate.getTime();
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  function compareByNaturalName(left: ImageItem, right: ImageItem): number {
+    return naturalSortCollator.compare(left.name, right.name);
+  }
+
+  function compareByExifDate(left: ImageItem, right: ImageItem): number {
+    const leftTimestamp = parseExifTimestamp(left.exif?.dateTimeOriginal);
+    const rightTimestamp = parseExifTimestamp(right.exif?.dateTimeOriginal);
+
+    if (leftTimestamp !== null && rightTimestamp !== null) {
+      if (leftTimestamp !== rightTimestamp) {
+        return leftTimestamp - rightTimestamp;
+      }
+
+      return compareByNaturalName(left, right);
+    }
+
+    return compareByNaturalName(left, right);
+  }
+
+  function sortItemsForCurrentMode(): void {
+    if (sortMode === "exifDate") {
+      imageItems.sort(compareByExifDate);
+    } else if (sortMode === "name") {
+      imageItems.sort(compareByNaturalName);
+    }
+  }
+
+  function setCurrentSortMode(nextMode: SortMode) {
+    sortMode = nextMode;
+    setSortMode(nextMode);
+    updateSortUI();
+  }
+
+  function applySortModeToItems(options: { render?: boolean } = {}) {
+    sortItemsForCurrentMode();
+    persistImagePositions();
+
+    if (options.render !== false) {
+      renderImageList();
+    }
+
+    updateSortUI();
+  }
+
+  function applyProjectImageToItem(item: ImageItem, projectImage: BilddatenProjectImage): void {
+    item.relativePath = projectImage.relativePath || item.relativePath;
+    item.lastModified = projectImage.lastModified ?? item.lastModified;
+    item.caption = projectImage.caption || "";
+    item.selected = projectImage.active;
+    item.includeCaptionInWord = projectImage.includeCaptionInWord;
+    item.position = projectImage.position;
+
+    if (projectImage.exifDateTaken) {
+      item.exif = {
+        ...(item.exif || {}),
+        dateTimeOriginal: projectImage.exifDateTaken,
+      };
+    }
+
+    setMeta(item.hash, {
+      caption: item.caption,
+      position: projectImage.position,
+      selected: projectImage.active,
+      includeCaptionInWord: projectImage.includeCaptionInWord,
+    });
+  }
+
+  function applyProjectFileToLoadedImages(projectFile: BilddatenProjectFile): {
+    applied: boolean;
+    matchedCount: number;
+    unmatchedProjectCount: number;
+    unmatchedItemCount: number;
+  } {
+    currentProjectCreatedAt = projectFile.createdAt || currentProjectCreatedAt;
+    setCurrentSortMode(projectFile.sortMode || "custom");
+
+    if (imageItems.length === 0) {
+      return {
+        applied: false,
+        matchedCount: 0,
+        unmatchedProjectCount: projectFile.images.length,
+        unmatchedItemCount: 0,
+      };
+    }
+
+    const matchResult = matchProjectImagesToItems(projectFile, imageItems);
+
+    if (matchResult.matches.length === 0) {
+      return {
+        applied: false,
+        matchedCount: 0,
+        unmatchedProjectCount: projectFile.images.length,
+        unmatchedItemCount: imageItems.length,
+      };
+    }
+
+    const orderedMatches = [...matchResult.matches].sort((left, right) => {
+      const positionDiff = left.image.position - right.image.position;
+      if (positionDiff !== 0) {
+        return positionDiff;
+      }
+
+      return left.itemIndex - right.itemIndex;
+    });
+
+    const reorderedItems: ImageItem[] = [];
+
+    for (const match of orderedMatches) {
+      const item = imageItems[match.itemIndex];
+      applyProjectImageToItem(item, match.image);
+      reorderedItems.push(item);
+    }
+
+    for (const itemIndex of matchResult.unmatchedItemIndexes) {
+      reorderedItems.push(imageItems[itemIndex]);
+    }
+
+    imageItems = reorderedItems;
+    persistImagePositions();
+    renderImageList();
+
+    return {
+      applied: true,
+      matchedCount: matchResult.matches.length,
+      unmatchedProjectCount: matchResult.unmatchedProjectImages.length,
+      unmatchedItemCount: matchResult.unmatchedItemIndexes.length,
+    };
+  }
+
+  function buildProjectSummaryMessage(
+    prefix: string,
+    result: {
+      applied: boolean;
+      matchedCount: number;
+      unmatchedProjectCount: number;
+      unmatchedItemCount: number;
+    }
+  ): string {
+    if (!result.applied) {
+      if (result.unmatchedProjectCount > 0) {
+        return `${prefix}: Keine passenden Bilder gefunden.`;
+      }
+
+      return `${prefix}: Keine Bilder geladen.`;
+    }
+
+    const parts = [`${prefix}: ${result.matchedCount} Bild(er) angewendet.`];
+
+    if (result.unmatchedProjectCount > 0) {
+      parts.push(`${result.unmatchedProjectCount} Eintrag(e) ohne Treffer.`);
+    }
+
+    if (result.unmatchedItemCount > 0) {
+      parts.push(`${result.unmatchedItemCount} Bild(er) ohne Projektzuordnung.`);
+    }
+
+    return parts.join(" ");
+  }
+
+  async function readProjectFileText(file: File): Promise<string> {
+    if (typeof file.text === "function") {
+      return file.text();
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          resolve(reader.result);
+          return;
+        }
+
+        reject(new Error("Projektdatei konnte nicht gelesen werden."));
+      };
+      reader.onerror = () => reject(new Error("Projektdatei konnte nicht gelesen werden."));
+      reader.readAsText(file);
+    });
+  }
+
+  async function readProjectFileFromFolderHandle(
+    folderHandle: ProjectFolderHandle
+  ): Promise<BilddatenProjectFile | undefined> {
+    try {
+      const fileHandle = await folderHandle.getFileHandle(PROJECT_FILE_NAME, { create: false });
+      const file = await fileHandle.getFile();
+      const rawText = await file.text();
+      return parseBilddatenProjectFile(rawText);
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function autoLoadProjectFileFromCurrentFolder(): Promise<string | undefined> {
+    if (!currentFolderHandle) {
+      return undefined;
+    }
+
+    const projectFile = await readProjectFileFromFolderHandle(currentFolderHandle);
+    if (!projectFile) {
+      return undefined;
+    }
+
+    const result = applyProjectFileToLoadedImages(projectFile);
+    return buildProjectSummaryMessage(`bilddaten.json automatisch geladen`, result);
+  }
+
+  async function writeProjectFileToCurrentFolder(
+    serializedProjectFile: string
+  ): Promise<"saved" | "cancelled" | "failed"> {
+    if (!currentFolderHandle) {
+      return "failed";
+    }
+
+    try {
+      let existingFile = false;
+      try {
+        await currentFolderHandle.getFileHandle(PROJECT_FILE_NAME, { create: false });
+        existingFile = true;
+      } catch {
+        existingFile = false;
+      }
+
+      if (existingFile) {
+        const overwrite = window.confirm(
+          "bilddaten.json existiert bereits. Soll die Datei überschrieben werden?"
+        );
+        if (!overwrite) {
+          setStatus("Speichern abgebrochen.");
+          return "cancelled";
+        }
+      }
+
+      const fileHandle = await currentFolderHandle.getFileHandle(PROJECT_FILE_NAME, {
+        create: true,
+      });
+      const writable = await fileHandle.createWritable();
+      await writable.write(serializedProjectFile);
+      await writable.close();
+      return "saved";
+    } catch (error) {
+      console.error("Fehler beim Speichern von bilddaten.json:", error);
+      return "failed";
+    }
+  }
+
+  async function saveProjectFile(): Promise<void> {
+    if (imageItems.length === 0) {
+      setStatus("Keine Bilder zum Speichern vorhanden.");
+      return;
+    }
+
+    const projectFile = buildBilddatenProjectFile(imageItems, sortMode, currentProjectCreatedAt);
+    const serializedProjectFile = serializeBilddatenProjectFile(projectFile);
+
+    if (currentFolderHandle) {
+      const saveResult = await writeProjectFileToCurrentFolder(serializedProjectFile);
+      if (saveResult === "saved" || saveResult === "cancelled") {
+        currentProjectCreatedAt = projectFile.createdAt;
+        if (saveResult === "saved") {
+          setStatus(`bilddaten.json wurde im aktuellen Ordner gespeichert.`);
+        }
+        return;
+      }
+    }
+
+    const savePicker = (window as any).showSaveFilePicker;
+    if (typeof savePicker === "function") {
+      try {
+        const fileHandle = await savePicker({
+          suggestedName: PROJECT_FILE_NAME,
+          types: [
+            {
+              description: "WERKHAUS Bilddaten",
+              accept: {
+                "application/json": [".json"],
+              },
+            },
+          ],
+        });
+
+        const writable = await fileHandle.createWritable();
+        await writable.write(serializedProjectFile);
+        await writable.close();
+        currentProjectCreatedAt = projectFile.createdAt;
+        setStatus(`bilddaten.json wurde gespeichert.`);
+        return;
+      } catch (error) {
+        console.warn("Speichern über showSaveFilePicker fehlgeschlagen oder abgebrochen:", error);
+        setStatus("Speichern abgebrochen.");
+        return;
+      }
+    }
+
+    setStatus("Speichern nicht unterstützt. Bitte Ordner über die native Ordnerauswahl laden.");
+  }
+
+  async function loadProjectFromText(rawText: string, sourceLabel: string): Promise<void> {
+    const projectFile = parseBilddatenProjectFile(rawText);
+    if (!projectFile) {
+      setStatus(`${sourceLabel}: bilddaten.json konnte nicht gelesen werden.`);
+      return;
+    }
+
+    const result = applyProjectFileToLoadedImages(projectFile);
+    const summary = buildProjectSummaryMessage(sourceLabel, result);
+    setStatus(summary);
+  }
+
+  async function loadProjectFromSelectedFile(file: File, sourceLabel: string): Promise<void> {
+    try {
+      const rawText = await readProjectFileText(file);
+      await loadProjectFromText(rawText, sourceLabel);
+    } catch (error) {
+      console.error("Fehler beim Laden der Projektdatei:", error);
+      setStatus(`${sourceLabel}: bilddaten.json konnte nicht gelesen werden.`);
+    }
+  }
+
   function resetInputValue(input: HTMLInputElement | null, label: string) {
     try {
       if (input) input.value = "";
@@ -217,9 +737,7 @@ function initTaskpane() {
   }
 
   function getSelectedItems(): ImageItem[] {
-    return [...imageItems]
-      .sort((a, b) => (a.position || 0) - (b.position || 0))
-      .filter((item) => item.selected !== false);
+    return imageItems.filter((item) => item.selected !== false);
   }
 
   function setAllItemsSelected(selected: boolean) {
@@ -290,11 +808,11 @@ function initTaskpane() {
 
     try {
       imageItems = importResult.items;
+      applySortModeToItems({ render: false });
 
       resetInputValue(imageUpload, "imageUpload");
       resetInputValue(folderUpload, "folderUpload");
 
-      persistImagePositions();
       renderImageList();
       setStatus(buildImportStatus(importResult));
     } catch (error) {
@@ -324,7 +842,7 @@ function initTaskpane() {
       return;
     }
 
-    const itemsToRender = [...imageItems].sort((a, b) => (a.position || 0) - (b.position || 0));
+    const itemsToRender = [...imageItems];
 
     itemsToRender.forEach((item, index) => {
       const card = document.createElement("div");
@@ -603,6 +1121,10 @@ function initTaskpane() {
     const insertIndex = Math.max(0, Math.min(targetPos - 1, imageItems.length));
     imageItems.splice(insertIndex, 0, item);
 
+    if (sortMode !== "custom") {
+      setCurrentSortMode("custom");
+    }
+
     persistImagePositions();
 
     renderImageList();
@@ -725,6 +1247,7 @@ function initTaskpane() {
         }
 
         if (files.length > 0) {
+          currentFolderHandle = null;
           await appendFiles(files);
         }
 
@@ -743,19 +1266,23 @@ function initTaskpane() {
     if (typeof nativeDirPicker === "function") {
       try {
         const dirHandle = await nativeDirPicker();
+        currentFolderHandle = dirHandle;
         const files: File[] = [];
 
-        async function traverseDirectory(handle: any) {
+        async function traverseDirectory(handle: any, relativePrefix = "") {
           for await (const entry of handle.values()) {
+            const entryPath = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
+
             if (entry.kind === "file") {
               try {
                 const file: File = await entry.getFile();
+                (file as File & { relativePath?: string }).relativePath = entryPath;
                 files.push(file);
               } catch (err) {
                 console.warn("Fehler beim Lesen einer Datei aus dem Ordner-Handle:", err);
               }
             } else if (entry.kind === "directory") {
-              await traverseDirectory(entry);
+              await traverseDirectory(entry, entryPath);
             }
           }
         }
@@ -764,6 +1291,11 @@ function initTaskpane() {
 
         if (files.length > 0) {
           await appendFiles(files);
+        }
+
+        const projectSummary = await autoLoadProjectFileFromCurrentFolder();
+        if (projectSummary) {
+          setStatus(projectSummary);
         }
 
         return;
@@ -824,6 +1356,7 @@ function initTaskpane() {
       return;
     }
 
+    currentFolderHandle = null;
     await appendFiles(droppedFiles);
   });
 
@@ -849,6 +1382,7 @@ function initTaskpane() {
       return;
     }
 
+    currentFolderHandle = null;
     await appendFiles(imageUpload.files);
   });
 
@@ -858,7 +1392,62 @@ function initTaskpane() {
       return;
     }
 
+    currentFolderHandle = null;
     await appendFiles(Array.from(folderUpload.files));
+  });
+
+  saveProjectButton?.addEventListener("click", async () => {
+    await saveProjectFile();
+  });
+
+  loadProjectButton?.addEventListener("click", async () => {
+    const nativePicker = (window as any).showOpenFilePicker;
+
+    if (typeof nativePicker === "function") {
+      try {
+        const handles = await nativePicker({
+          multiple: false,
+          types: [
+            {
+              description: "WERKHAUS Bilddaten",
+              accept: {
+                "application/json": [".json"],
+              },
+            },
+          ],
+        });
+
+        const fileHandle = handles?.[0];
+        if (!fileHandle) {
+          setStatus("Keine Projektdatei ausgewählt.");
+          return;
+        }
+
+        const file = await fileHandle.getFile();
+        await loadProjectFromSelectedFile(file, "Projektdatei");
+        return;
+      } catch (error) {
+        if ((error as { name?: string })?.name === "AbortError") {
+          setStatus("Keine Projektdatei ausgewählt.");
+          return;
+        }
+
+        console.warn("showOpenFilePicker nicht verfügbar oder abgebrochen:", error);
+      }
+    }
+
+    projectImportUpload?.click();
+  });
+
+  projectImportUpload?.addEventListener("change", async () => {
+    if (!projectImportUpload.files || projectImportUpload.files.length === 0) {
+      setStatus("Keine Projektdatei ausgewählt.");
+      return;
+    }
+
+    const file = projectImportUpload.files[0];
+    projectImportUpload.value = "";
+    await loadProjectFromSelectedFile(file, "Projektdatei");
   });
 
   clearImagesButton?.addEventListener("click", () => {
@@ -895,8 +1484,31 @@ function initTaskpane() {
     updateVisibilityUI();
   });
 
+  expandAllSectionsButton?.addEventListener("click", () => {
+    setAllSectionsCollapsed(false);
+  });
+
+  collapseAllSectionsButton?.addEventListener("click", () => {
+    setAllSectionsCollapsed(true);
+  });
+
+  bindSectionToggleButtons();
+
+  sortModeSelect?.addEventListener("change", () => {
+    const nextMode = sortModeSelect.value as SortMode;
+    if (nextMode === sortMode) {
+      updateSortUI();
+      return;
+    }
+
+    setCurrentSortMode(nextMode);
+    applySortModeToItems();
+  });
+
   updatePreviewSize();
   updateVisibilityUI();
+  updateSortUI();
+  restoreCollapsedSections();
   resetDropZoneState();
   persistImagePositions();
   renderImageList();
