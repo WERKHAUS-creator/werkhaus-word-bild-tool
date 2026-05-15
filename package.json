@@ -22,7 +22,6 @@
     "signout": "office-addin-dev-settings m365-account logout",
     "start": "office-addin-debugging start manifest.dev.xml",
     "stop": "office-addin-debugging stop manifest.dev.xml",
-    "validate": "npm run validate:dev",
     "validate:dev": "office-addin-manifest validate manifest.dev.xml",
     "validate:prod": "office-addin-manifest validate manifest.xml",
     "validate:dist": "office-addin-manifest validate dist/manifest.xml",
