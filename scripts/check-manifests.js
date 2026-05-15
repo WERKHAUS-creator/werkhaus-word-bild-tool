@@ -1,8 +1,8 @@
 const fs = require("fs");
 
-const LOCAL_MANIFEST = "manifest.local.xml";
-const PRODUCTION_MANIFEST = "manifest.production.xml";
-const LOCAL_URL = "https://localhost:3001";
+const DEV_MANIFEST = "manifest.dev.xml";
+const PRODUCTION_MANIFEST = "manifest.xml";
+const DEV_URL = "https://localhost:3001";
 const PRODUCTION_URL = "https://tool2.wh-sv.de";
 
 function readManifest(path) {
@@ -25,13 +25,28 @@ function assertDoesNotContain(content, forbidden, path) {
   }
 }
 
-const localManifest = readManifest(LOCAL_MANIFEST);
+const localManifest = readManifest(DEV_MANIFEST);
 const productionManifest = readManifest(PRODUCTION_MANIFEST);
 
-assertContains(localManifest, LOCAL_URL, LOCAL_MANIFEST);
-assertDoesNotContain(localManifest, PRODUCTION_URL, LOCAL_MANIFEST);
+assertContains(localManifest, DEV_URL, DEV_MANIFEST);
+assertDoesNotContain(localManifest, PRODUCTION_URL, DEV_MANIFEST);
 
 assertContains(productionManifest, PRODUCTION_URL, PRODUCTION_MANIFEST);
-assertDoesNotContain(productionManifest, LOCAL_URL, PRODUCTION_MANIFEST);
+assertDoesNotContain(productionManifest, DEV_URL, PRODUCTION_MANIFEST);
+
+if (localManifest === productionManifest) {
+  throw new Error("DEV- und Produktionsmanifest duerfen nicht identisch sein.");
+}
+
+const devIdMatch = localManifest.match(/<Id>([^<]+)<\/Id>/);
+const prodIdMatch = productionManifest.match(/<Id>([^<]+)<\/Id>/);
+
+if (!devIdMatch || !prodIdMatch) {
+  throw new Error("Manifest-IDs konnten nicht gelesen werden.");
+}
+
+if (devIdMatch[1] === prodIdMatch[1]) {
+  throw new Error("DEV- und Produktionsmanifest muessen unterschiedliche App-IDs haben.");
+}
 
 console.log("Manifest-Struktur ok.");

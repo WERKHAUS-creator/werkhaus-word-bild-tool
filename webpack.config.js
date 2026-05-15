@@ -84,7 +84,7 @@ module.exports = async (env, options) => {
             to: "assets/[name][ext][query]",
           },
           {
-            from: dev ? "manifest.local.xml" : "manifest.production.xml",
+            from: dev ? "manifest.dev.xml" : "manifest.xml",
             to: "manifest.xml",
           },
         ],

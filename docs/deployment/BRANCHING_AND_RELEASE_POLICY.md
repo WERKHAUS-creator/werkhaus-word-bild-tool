@@ -15,7 +15,7 @@
 3. `npm run check:manifests` passes.
 4. `npm run lint` passes.
 5. `npm run build` passes.
-6. `npm run validate:local` passes.
+6. `npm run validate:dev` passes.
 7. `npm run validate:prod` passes.
 8. Manual smoke-check for Word insertion modes.
 9. Change summary and risk note documented in PR.
@@ -24,7 +24,7 @@
 1. Confirm current branch is `main`.
 2. Confirm target commit is intended release.
 3. Run `npm run check:manifests`.
-4. Ensure no local-only URLs in `manifest.production.xml`.
+4. Ensure no local-only URLs in `manifest.xml`.
 5. Verify GitHub Secrets contain deployment token only (no plain tokens in repo).
 6. Trigger workflow and validate deployment URL.
 
