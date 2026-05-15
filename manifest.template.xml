@@ -6,20 +6,20 @@
   xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
   xsi:type="TaskPaneApp">
 
-  <Id>6e810989-dd0a-4217-b841-503d28b8a05a</Id>
-  <Version>1.0.0.4</Version>
+  <Id>__APP_ID__</Id>
+  <Version>__MANIFEST_VERSION__</Version>
   <ProviderName>WERKHAUS</ProviderName>
   <DefaultLocale>de-DE</DefaultLocale>
 
   <DisplayName DefaultValue="WERKHAUS Word &amp; Bild"/>
   <Description DefaultValue="WERKHAUS Word &amp; Bild zum Einfügen, Beschriften und Verwalten von Bildern in Word-Dokumenten inklusive Bilddokumentation und Abbildungsverzeichnis."/>
 
-  <IconUrl DefaultValue="https://localhost:3001/assets/werkhaus-32.png?v=2"/>
-  <HighResolutionIconUrl DefaultValue="https://localhost:3001/assets/werkhaus-64.png?v=2"/>
-  <SupportUrl DefaultValue="https://localhost:3001/taskpane.html"/>
+  <IconUrl DefaultValue="__BASE_URL__/assets/werkhaus-32.png?v=2"/>
+  <HighResolutionIconUrl DefaultValue="__BASE_URL__/assets/werkhaus-64.png?v=2"/>
+  <SupportUrl DefaultValue="__BASE_URL__/taskpane.html"/>
 
   <AppDomains>
-    <AppDomain>https://localhost:3001</AppDomain>
+    <AppDomain>__BASE_URL__</AppDomain>
   </AppDomains>
 
   <Hosts>
@@ -27,7 +27,7 @@
   </Hosts>
 
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://localhost:3001/taskpane.html"/>
+    <SourceLocation DefaultValue="__BASE_URL__/taskpane.html"/>
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -73,13 +73,13 @@
 
     <Resources>
       <bt:Images>
-        <bt:Image id="Commands.Icon.16" DefaultValue="https://localhost:3001/assets/icon-16.png"/>
-        <bt:Image id="Commands.Icon.32" DefaultValue="https://localhost:3001/assets/icon-32.png"/>
-        <bt:Image id="Commands.Icon.80" DefaultValue="https://localhost:3001/assets/icon-80 2.png"/>
+        <bt:Image id="Commands.Icon.16" DefaultValue="__BASE_URL__/assets/icon-16.png"/>
+        <bt:Image id="Commands.Icon.32" DefaultValue="__BASE_URL__/assets/icon-32.png"/>
+        <bt:Image id="Commands.Icon.80" DefaultValue="__BASE_URL__/assets/icon-80 2.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Commands.Url" DefaultValue="https://localhost:3001/commands.html"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3001/taskpane.html"/>
+        <bt:Url id="Commands.Url" DefaultValue="__BASE_URL__/commands.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="__BASE_URL__/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="Commands.GroupLabel" DefaultValue="WERKHAUS Word &amp; Bild"/>

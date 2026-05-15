@@ -3,6 +3,8 @@ dist/
 lib/
 lib-amd/
 coverage/
+manifest.xml
+manifest.dev.xml
 
 .DS_Store
 **/.DS_Store
