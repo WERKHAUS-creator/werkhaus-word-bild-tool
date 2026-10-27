@@ -69,7 +69,8 @@ Wichtige Einschränkung:
 ## Wichtige Befehle
 
 ```bash
-npm install
+npm ci
+npm test
 npm run dev-server
 npm run start
 npm run build
@@ -78,6 +79,37 @@ npm run validate:prod
 npm run check:manifests
 npm run lint
 ```
+
+## Abhängigkeiten reproduzierbar reparieren
+
+Für eine Neuinstallation im aktuellen Projektordner:
+
+```bash
+npm run repair:deps
+```
+
+Der Befehl führt `npm ci` aus. npm ersetzt dabei `node_modules` und installiert
+die in `package-lock.json` festgeschriebenen Abhängigkeiten. `package.json` und
+`package-lock.json` bleiben erhalten. Ein vorheriges Löschen ist nicht nötig.
+Fehlt die Lockdatei oder passt sie nicht zur `package.json`, bricht die Reparatur
+ab. In diesem Fall die passenden Dateien aus Git wiederherstellen bzw. eine
+beabsichtigte Abhängigkeitsänderung getrennt prüfen; kein automatischer Fallback
+auf `npm install`.
+
+Auf den Macs dieselbe Node-/npm-Version verwenden; der Azure-Build verwendet
+Node 20. Die Lockdatei garantiert die festgelegten Paketversionen, ersetzt aber
+nicht die betriebssystemspezifische Installation nativer Module wie `keytar`.
+Bei reinen Ausführungsrechteproblemen steht weiterhin `npm run repair:bin` zur
+Verfügung. Build-, Entwicklungs-, Word-Start- und Manifest-Befehle bleiben gleich.
+
+`npm test` benötigt keine installierten Projektabhängigkeiten. Die Tests führen
+den Reparaturbefehl ausschließlich in temporären, isolierten Offline-Projekten
+aus. Sie prüfen wiederholte Neuinstallation, unveränderte Lockdatei, Bereinigung
+veralteter Module, ausführbare CLI-Dateien und Fehlerfälle. GitHub Actions prüft
+zusätzlich den echten Reparaturablauf und beide Build-Modi auf Linux und macOS.
+Diese Test-Workflowdatei enthält keine Bereitstellung. Der Azure-Workflow baut
+Entwurfs-PRs ohne Veröffentlichung einer Vorschau. Der Befund zur getrennten
+Branch-Historie steht in [docs/dependency-repair.md](docs/dependency-repair.md).
 
 ## Struktur
 

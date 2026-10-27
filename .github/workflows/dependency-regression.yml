@@ -1,0 +1,40 @@
+name: Dependency repair regression
+
+on:
+  push:
+    branches: [main, develop, 'fix/**']
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  repair-and-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Test repair in isolated offline fixtures
+        run: npm test
+      - name: Install the locked project through the repair command
+        run: npm run repair:deps
+      - name: Check manifest and version consistency
+        run: npm run check:manifests
+      - name: Lint application and regression tests
+        run: |
+          npm run lint
+          node node_modules/eslint/bin/eslint.js tests/dependency-repair.test.cjs
+      - name: Build development bundle
+        run: npm run build:dev
+      - name: Build production bundle
+        run: npm run build
+      - name: Verify dependency files are unchanged
+        run: git diff --exit-code -- package.json package-lock.json
