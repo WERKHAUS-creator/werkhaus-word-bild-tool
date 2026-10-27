@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ ! -d node_modules/.bin ]; then
-  echo "node_modules/.bin nicht gefunden. Bitte zuerst 'npm install' ausführen."
+  echo "node_modules/.bin nicht gefunden. Bitte zuerst 'npm ci' ausführen."
   exit 1
 fi
 

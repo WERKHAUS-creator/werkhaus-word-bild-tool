@@ -9,7 +9,8 @@
   },
   "scripts": {
     "repair:bin": "bash ./scripts/repair-node-bin-permissions.sh",
-    "repair:deps": "rm -rf node_modules package-lock.json && npm install",
+    "repair:deps": "npm ci",
+    "test": "node --test tests/*.test.cjs",
     "doctor": "npm run repair:bin && npm run check:manifests && npm run validate:local && npm run validate:production && npm run lint && npm run build",
     "check:manifests": "node scripts/check-manifests.js",
     "build": "webpack --mode production && cp dist/taskpane.html dist/index.html",

@@ -46,7 +46,7 @@ export default [
     },
   },
   {
-    files: ["webpack.config.js"],
+    files: ["webpack.config.js", "tests/**/*.cjs"],
     languageOptions: {
       ecmaVersion: 2021,
       sourceType: "commonjs",

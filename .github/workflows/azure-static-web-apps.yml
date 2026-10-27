@@ -27,8 +27,12 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - name: Test dependency repair
+        run: npm test
       - name: Install dependencies
         run: npm ci
+      - name: Verify dependency files are unchanged
+        run: git diff --exit-code -- package.json package-lock.json
       - name: Build app
         run: npm run build
       - name: Verify build output
@@ -37,6 +41,8 @@ jobs:
           echo "dist directory exists"
           find dist -maxdepth 2 -type f | sort | head -100
       - name: Deploy to Azure Static Web Apps
+        # Draft PRs are reviewed and built without publishing a preview.
+        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
